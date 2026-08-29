@@ -1,4 +1,4 @@
-# mihomo-fpk
+# miproxy-fpk
 
 飞牛 NAS (fnOS) 上的 Mihomo 代理核心 FPK 应用包。
 
@@ -15,21 +15,21 @@
 
 ### 方式一：直接下载 FPK（推荐）
 
-在 [Releases](https://github.com/56025192/mihomo-fpk/releases) 页面下载 `mihomo-v2.0.3.fpk`，在 fnOS 应用中心上传安装。
+在 [Releases](https://github.com/56025192/miproxy-fpk/releases) 页面下载 `mihomo-v2.0.3.fpk`，在 fnOS 应用中心上传安装。
 
 ### 方式二：从源码构建
 
 1. 克隆仓库
 ```bash
-git clone https://github.com/56025192/mihomo-fpk.git
-cd mihomo-fpk
+git clone https://github.com/56025192/miproxy-fpk.git
+cd miproxy-fpk
 ```
 
 2. 下载 mihomo 二进制
 ```bash
-curl -L -o app/server/mihomo https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-v1.19.30.gz
-gunzip app/server/mihomo
-chmod +x app/server/mihomo
+curl -L -o app/server/miproxy https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-v1.19.30.gz
+gunzip app/server/miproxy
+chmod +x app/server/miproxy
 ```
 
 3. 打包 FPK
@@ -39,9 +39,9 @@ fnpack build .
 
 ## 配置文件位置
 
-- `/vol1/@appdata/mihomo/config.yaml` - 主配置
-- `/vol1/@appdata/mihomo/subscription.yaml` - 订阅配置
-- `/vol1/@appdata/mihomo/info.log` - 运行日志
+- `/vol1/@appdata/miproxy/config.yaml` - 主配置
+- `/vol1/@appdata/miproxy/subscription.yaml` - 订阅配置
+- `/vol1/@appdata/miproxy/info.log` - 运行日志
 
 ## 版本历史
 

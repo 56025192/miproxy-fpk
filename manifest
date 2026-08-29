@@ -1,14 +1,14 @@
-# MiHomo FPK Application Manifest
+# MiProxy FPK Application Manifest
 # ================================
-appname               = mihomo
+appname               = miproxy
 version               = 1.19.30
-display_name          = MiHomo 代理核心
-desc                  = <h3>MiHomo (Clash.Meta) 代理核心</h3><p>支持 Clash 协议的全功能代理工具，包含两种 Web 控制面板可选</p><ul><li>mihomo v1.19.30 代理核心（已集成）</li><li>MetaCubeXD v1.273.0 / Zashboard v3.24.0 控制面板（安装可选）</li><li>支持 Surge、Clash、VMess、Trojan、Shadowsocks 等协议</li><li>支持规则自动分流、TUN 模式</li></ul>
+display_name          = MiProxy
+desc                  = <h3>MiProxy</h3><p>mihomo 代理核心，简洁高效的代理工具</p><ul><li>支持 VMess、VLess、Trojan、Shadowsocks、Hysteria2 等多种协议</li><li>内置 Zashboard / MetaCubeXD 双控制面板</li><li>订阅管理 + 自动刷新</li><li>局域网共享上网</li><li>离线 GEO 数据库，开箱即用</li></ul>
 platform              = x86
 source                = thirdparty
 os_min_version        = 0.9.27
 maintainer            = 56025192
-maintainer_url        = https://github.com/56025192/mihomo-fpk
+maintainer_url        = https://github.com/56025192/miproxy-fpk
 distributor           = 小陈先生
 distributor_url       = https://gx3.cn
 install_type          =
@@ -16,4 +16,4 @@ ctl_stop              = true
 startup               = true
 service_port          = 9090
 desktop_uidir         = ui
-desktop_applaunchname = mihomo.dashboard
+desktop_applaunchname = miproxy.dashboard

@@ -167,24 +167,16 @@ jobs:
             ls -la zashboard-tmp/
             
             # 创建目标目录
-            mkdir -p app/ui/zashboard/dist
+            mkdir -p app/ui/zashboard
             
-            # dist.zip 解压后可能是：
-            # 1. 直接包含 index.html 等文件
-            # 2. 包含 dist/ 子目录
-            
-            if [ -f "zashboard-tmp/index.html" ]; then
-              # 情况1: 直接是文件，移动到 dist/
-              echo "情况1: 解压后直接是文件"
-              mv zashboard-tmp/* app/ui/zashboard/dist/
-            elif [ -d "zashboard-tmp/dist" ]; then
-              # 情况2: 包含 dist/ 子目录
-              echo "情况2: 解压后包含 dist/ 子目录"
-              mv zashboard-tmp/dist/* app/ui/zashboard/dist/
+            # dist.zip 解压后内容在 zashboard-tmp/dist/ 下
+            # 需要把 dist/ 的内容移到 zashboard/ 目录
+            if [ -d "zashboard-tmp/dist" ]; then
+              echo "提取 dist 目录内容到 zashboard..."
+              cp -rf zashboard-tmp/dist/* app/ui/zashboard/
             else
-              # 尝试其他可能
               echo "未知解压结构，尝试移动所有内容"
-              mv zashboard-tmp/* app/ui/zashboard/dist/ 2>/dev/null || true
+              cp -rf zashboard-tmp/* app/ui/zashboard/ 2>/dev/null || true
             fi
             
             rm -rf zashboard-tmp zashboard.zip
@@ -193,13 +185,11 @@ jobs:
             echo ""
             echo "=== Zashboard 目录结构 ==="
             ls -la app/ui/zashboard/
-            echo ""
-            echo "=== dist 目录内容 ==="
-            ls app/ui/zashboard/dist/ | head -10
             
-            if [ -f "app/ui/zashboard/dist/index.html" ]; then
+            if [ -f "app/ui/zashboard/index.html" ]; then
               echo ""
               echo "✅ Zashboard 下载成功 (版本 v${ZASHBOARD_VERSION})"
+              echo "   index.html 在正确位置"
             else
               echo "❌ Zashboard 下载失败：未找到 index.html"
               exit 1

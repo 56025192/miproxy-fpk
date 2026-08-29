@@ -2,11 +2,12 @@
   ".url": {
     "miproxy.dashboard": {
       "title": "MiProxy 控制面板",
-      "icon": "ICON.png",
-      "type": "url",
+      "desc": "mihomo 代理核心，简洁高效的代理工具",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
       "protocol": "http",
-      "url": "/ui/zashboard/",
       "port": "9090",
+      "url": "/ui/zashboard/",
       "allUsers": true
     }
   }

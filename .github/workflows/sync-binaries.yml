@@ -98,7 +98,7 @@ jobs:
           
           mkdir -p app/data
           
-          # 获取 Loyalsoldier/v2ray-rules-dat 最新版本
+          # 获取 v2ray-rules-dat 最新版本（包含 geoip.dat 和 geosite.dat）
           GEO_VERSION=$(curl -sL "https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases/latest" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
           echo "geo_version=${GEO_VERSION}" >> $GITHUB_ENV
           echo "📦 GEO 版本: ${GEO_VERSION}"
@@ -111,9 +111,10 @@ jobs:
           echo "  - geosite.dat"
           curl -sL "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${GEO_VERSION}/geosite.dat" -o app/data/geosite.dat
           
-          # Country.mmdb (来自 Loyalsoldier/geoip)
+          # Country.mmdb (来自 Loyalsoldier/geoip，使用不同版本号)
           echo "  - Country.mmdb"
-          curl -sL "https://github.com/Loyalsoldier/geoip/releases/download/${GEO_VERSION}/Country.mmdb" -o app/data/Country.mmdb
+          GEOIP_VERSION=$(curl -sL "https://api.github.com/repos/Loyalsoldier/geoip/releases/latest" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          curl -sL "https://github.com/Loyalsoldier/geoip/releases/download/${GEOIP_VERSION}/Country.mmdb" -o app/data/Country.mmdb
           
           # 验证
           echo ""
@@ -126,6 +127,10 @@ jobs:
               # 验证文件大小（geoip.dat 应该 > 1MB）
               if [ "$f" = "geoip.dat" ] && [ "$BYTES" -lt 1000000 ]; then
                 echo "  ⚠️ geoip.dat 文件过小，可能下载失败"
+                exit 1
+              fi
+              if [ "$f" = "Country.mmdb" ] && [ "$BYTES" -lt 1000000 ]; then
+                echo "  ⚠️ Country.mmdb 文件过小，可能下载失败"
                 exit 1
               fi
             else

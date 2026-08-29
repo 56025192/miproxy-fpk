@@ -1,124 +1,121 @@
 name: Build FPK
 
 on:
-  # push 到 main 分支时触发（所有文件变更）
+  # 通过 tag 触发构建（如 v2.1.7）
   push:
-    branches: [main]
+    tags: ['v*']
   
   # 手动触发
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (如 2.1.7，不填则自动从 manifest 读取)'
+        description: '版本号 (如 2.1.7)'
         required: false
         default: ''
+      create_release:
+        description: '创建 Release'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  # ==================== 分析变更 ====================
-  analyze:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      commit_message: ${{ steps.commit.outputs.message }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get version
-        id: version
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
-          if [ -z "$VERSION" ]; then
-            VERSION=$(grep "^version" manifest | sed 's/.*= *//')
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 版本: ${VERSION}"
-
-      - name: Get commit message
-        id: commit
-        run: |
-          MSG=$(git log -1 --format="%s")
-          echo "message=${MSG}" >> $GITHUB_OUTPUT
-          echo "📝 最新提交: ${MSG}"
-
-  # ==================== 构建 FPK ====================
   build:
-    needs: analyze
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # ========== 检出代码 ==========
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          fetch-depth: 1
 
-      - name: Install fnpack
+      # ========== 确定版本号 ==========
+      - name: 确定版本号
+        id: version
         run: |
-          echo "📦 安装 fnpack..."
-          curl -sL "https://github.com/56025192/miproxy-fpk/releases/download/v2.1.6/fnpack-linux-amd64" -o /usr/local/bin/fnpack
-          chmod +x /usr/local/bin/fnpack
-          echo "✅ fnpack 安装完成"
+          MANIFEST_VER=$(grep '^version' manifest | awk -F'=' '{print $2}' | tr -d ' ')
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${MANIFEST_VER}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "版本号: $VERSION"
 
-      - name: Build FPK
+      # ========== 修复脚本权限 ==========
+      - name: 修复脚本权限
+        run: |
+          for f in cmd/main cmd/install_init cmd/install_callback cmd/uninstall_init cmd/uninstall_callback cmd/upgrade_init cmd/upgrade_callback cmd/config_init cmd/config_callback; do
+            [ -f "$f" ] && sed -i 's/\r$//' "$f" && chmod +x "$f"
+          done
+          echo "✅ 脚本权限已修复"
+
+      # ========== 下载 fnpack 并打包 ==========
+      - name: 下载 fnpack 并打包
         id: build
         run: |
-          echo "🔨 打包 FPK..."
-          fnpack build . 2>&1
+          echo "📦 下载 fnpack..."
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
+          chmod +x /tmp/fnpack
           
-          # 查找生成的 fpk 文件
-          FPK=$(ls -t *.fpk 2>/dev/null | head -1)
+          echo "🔨 开始打包..."
+          /tmp/fnpack build --directory .
+          
+          FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then
             echo "✅ FPK 打包成功: $FPK"
             echo "fpk_file=$FPK" >> $GITHUB_OUTPUT
           else
             echo "❌ FPK 打包失败"
+            ls -la
             exit 1
           fi
 
-      - name: Upload FPK artifact
+      # ========== 上传产物 ==========
+      - name: 上传 FPK
         uses: actions/upload-artifact@v4
         with:
-          name: miproxy-fpk-${{ needs.analyze.outputs.version }}
-          path: ${{ runner.temp }}/*.fpk
+          name: miproxy-fpk
+          path: *.fpk
           retention-days: 7
 
-  # ==================== 创建草稿 Release ====================
-  draft:
-    needs: [analyze, build]
+  # ========== 创建 Release ==========
+  release:
+    needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          fetch-depth: 0
 
-      - name: Download FPK
+      - name: 下载 FPK
         uses: actions/download-artifact@v4
         with:
-          name: miproxy-fpk-${{ needs.analyze.outputs.version }}
+          name: miproxy-fpk
 
-      - name: Get changed files
-        id: changed
+      - name: 获取变更信息
+        id: changes
         run: |
-          # 获取所有变更文件
           git fetch --tags
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "上一个版本: ${LAST_TAG:-无}"
           
-          echo "=== 变更文件 ==="
           if [ -n "$LAST_TAG" ]; then
-            git diff ${LAST_TAG}..HEAD --name-only | head -30
+            echo "=== 变更文件 ==="
+            git diff ${LAST_TAG}..HEAD --name-only | head -20
             echo ""
             echo "=== 提交历史 ==="
-            git log ${LAST_TAG}..HEAD --oneline --format="• %s | %an | %cr"
+            git log ${LAST_TAG}..HEAD --oneline --format="• %s"
           else
-            git log -10 --oneline --format="• %s | %an | %cr"
+            echo "=== 首次发布 ==="
+            git log --oneline -10 --format="• %s"
           fi > /tmp/changes.txt
           
           CHANGES=$(cat /tmp/changes.txt)
@@ -126,46 +123,52 @@ jobs:
           echo "${CHANGES}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Create Draft Release
+      - name: 确定 Release 信息
+        id: release_info
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v${{ needs.build.outputs.version }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "build_time=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M CST')" >> $GITHUB_OUTPUT
+
+      - name: 创建草稿 Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.analyze.outputs.version }}
-          name: MiProxy v${{ needs.analyze.outputs.version }} - 草稿
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: "MiProxy ${{ steps.release_info.outputs.tag }}"
           draft: true
           prerelease: false
           body: |
-            ## ⚠️ 草稿版本待发布
+            ## MiProxy ${{ steps.release_info.outputs.tag }}
 
-            此版本包含最新提交，请审核后决定是否发布。
-
-            ---
-
-            ### 📝 最新提交
-
-            **${{ needs.analyze.outputs.commit_message }}**
+            飞牛 NAS (fnOS) FPK 应用
 
             ---
 
             ### 📋 变更详情
 
             ```
-            ${{ needs.analyze.outputs.changes }}
+            ${{ steps.changes.outputs.changes }}
             ```
 
             ---
 
-            ### 📦 下载测试
+            ### 📥 下载
 
-            - **FPK**: miproxy-v${{ needs.analyze.outputs.version }}.fpk
+            - **FPK**: miproxy-${{ needs.build.outputs.version }}.fpk
 
             ---
 
             ### 🔄 操作
 
-            请点击右上角 **Publish release** 按钮发布，或编辑后发布。
+            请审核变更内容，确认无误后点击 **Publish release** 发布。
 
             ---
+            构建时间：${{ steps.release_info.outputs.build_time }}
             *由 GitHub Actions 自动创建*
           files: |
             *.fpk
@@ -176,7 +179,7 @@ jobs:
         run: |
           echo "## ✅ 构建完成" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**版本**: v${{ needs.analyze.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**版本**: ${{ steps.release_info.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**草稿 Release**: ${{ steps.create_release.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

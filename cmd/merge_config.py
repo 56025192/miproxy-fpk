@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-MiHomo 配置合并脚本
+MiProxy 配置合并脚本
 
 设计原则：
-- base.yaml 是系统基础配置，由 mihomo-fpk 管理（端口、面板、TUN、DNS、日志等）
+- base.yaml 是系统基础配置，由 miproxy-fpk 管理（端口、面板、TUN、DNS、日志等）
 - subscription.yaml 是用户订阅，只贡献 节点/分组/规则 等订阅字段
 - 合并时使用白名单机制：subscription.yaml 中只有订阅字段会进入最终配置
 - 这样无论订阅文件包含什么垃圾字段，都不会影响系统行为
@@ -89,7 +89,7 @@ def merge_configs(base_file, sub_file, output_file):
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write("# MiHomo 主配置（自动生成：base.yaml + subscription.yaml）\n")
+        f.write("# MiProxy 主配置（自动生成：base.yaml + subscription.yaml）\n")
         f.write("# 基础配置由系统管理，订阅内容可在 fnOS 应用设置面板修改\n")
         f.write(f"# base.yaml 字段: {len(base)}, subscription.yaml 白名单字段: {len(sub_cleaned)}, 冲突剔除: {len(sub_removed)}\n")
         f.write("---\n")

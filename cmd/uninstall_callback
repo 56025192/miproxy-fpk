@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# MiHomo 卸载后回调
-# 职责：根据用户选择保留或彻底删除所有 mihomo 相关文件
+# MiProxy 卸载后回调
+# 职责：根据用户选择保留或彻底删除所有 miproxy 相关文件
 # 注意：不用 set -e，所有清理操作加 || true 兜底
 
 DATA_ACTION="${wizard_data_action:-keep}"
-LOG_FILE="/tmp/mihomo_uninstall.log"
+LOG_FILE="/tmp/miproxy_uninstall.log"
 exec >>"${LOG_FILE}" 2>&1
 
 echo ""
@@ -17,10 +17,10 @@ echo "=========================================="
 CLEAN_PATHS=(
     "${TRIM_PKGVAR}"
     "${TRIM_PKGETC}"
-    "/vol1/@apphome/mihomo"
-    "/vol1/@appcenter/mihomo"
-    "/var/apps/mihomo"
-    "/tmp/appcenter/mihomo"
+    "/vol1/@apphome/miproxy"
+    "/vol1/@appcenter/miproxy"
+    "/var/apps/miproxy"
+    "/tmp/appcenter/miproxy"
 )
 
 # 添加数据共享目录
@@ -32,7 +32,7 @@ if [ -n "${TRIM_DATA_SHARE_PATHS}" ]; then
 fi
 
 if [ "${DATA_ACTION}" = "delete" ]; then
-    echo "完整删除模式：清理所有 mihomo 残留..."
+    echo "完整删除模式：清理所有 miproxy 残留..."
 
     for path in "${CLEAN_PATHS[@]}"; do
         if [ -e "${path}" ]; then
@@ -46,7 +46,7 @@ if [ "${DATA_ACTION}" = "delete" ]; then
 
     # 清理 appcenter 数据库记录
     if command -v psql >/dev/null 2>&1; then
-        if PGPASSWORD="" psql -U postgres -d appcenter -c "DELETE FROM app WHERE app_name='mihomo';" >/dev/null 2>&1; then
+        if PGPASSWORD="" psql -U postgres -d appcenter -c "DELETE FROM app WHERE app_name='miproxy';" >/dev/null 2>&1; then
             echo "已清理 appcenter 数据库"
         else
             echo "appcenter 数据库清理失败（不影响卸载）"
@@ -65,9 +65,9 @@ else
     echo "保留数据模式：保留应用数据"
     if [ -d "${TRIM_PKGVAR}" ]; then
         cat > "${TRIM_PKGVAR}/.preserved" 2>/dev/null << EOF
-# 此目录由 mihomo 卸载时保留
+# 此目录由 miproxy 卸载时保留
 # 上次卸载时间: $(date '+%Y-%m-%d %H:%M:%S')
-# 重新安装 mihomo 将自动复用此目录中的配置和订阅
+# 重新安装 miproxy 将自动复用此目录中的配置和订阅
 EOF
         echo "已标记保留目录: ${TRIM_PKGVAR}"
     fi

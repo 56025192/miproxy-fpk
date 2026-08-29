@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# MiHomo 卸载前回调
-# 职责：彻底停止 mihomo 进程（包括主进程、子进程、可能的守护进程）
+# MiProxy 卸载前回调
+# 职责：彻底停止 miproxy 进程（包括主进程、子进程、可能的守护进程）
 # 注意：不用 set -e，所有清理操作加 || true 兜底
 
 VAR_DIR="${TRIM_PKGVAR}"
-LOG_FILE="/tmp/mihomo_uninstall.log"
+LOG_FILE="/tmp/miproxy_uninstall.log"
 exec >>"${LOG_FILE}" 2>&1
 
 echo ""
 echo "=========================================="
-echo "$(date '+%Y-%m-%d %H:%M:%S') uninstall_init: 开始停止 mihomo 进程"
+echo "$(date '+%Y-%m-%d %H:%M:%S') uninstall_init: 开始停止 miproxy 进程"
 echo "=========================================="
 
 # 方法 1：通过 PID 文件停止（如果还在）
@@ -53,10 +53,10 @@ if [ -n "${REMAINING}" ]; then
 fi
 
 # 方法 4：兜底，按可执行文件路径杀
-PATH_BASED=$(pgrep -f "/vol1/@appdata/mihomo/target/mihomo" 2>/dev/null || true)
+PATH_BASED=$(pgrep -f "/vol1/@appdata/miproxy/target/mihomo" 2>/dev/null || true)
 if [ -n "${PATH_BASED}" ]; then
     echo "通过路径找到残留进程: ${PATH_BASED}"
-    pkill -KILL -f "/vol1/@appdata/mihomo/target/mihomo" 2>/dev/null || true
+    pkill -KILL -f "/vol1/@appdata/miproxy/target/mihomo" 2>/dev/null || true
     sleep 1
 fi
 

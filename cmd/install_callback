@@ -57,7 +57,11 @@ log_msg "复制控制面板: ${DASHBOARD}"
 # 所以面板文件必须放到 ${UI_TARGET}/${DASHBOARD}/ 子目录下
 if [ "${DASHBOARD}" = "zashboard" ]; then
     mkdir -p "${UI_TARGET}/zashboard"
+    # zashboard 的 index.html 在 dist 子目录下，需要提出来
     cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/"
+    if [ -d "${APP_DEST}/ui/zashboard/dist" ]; then
+        cp -rf "${APP_DEST}/ui/zashboard/dist/"* "${UI_TARGET}/zashboard/"
+    fi
     DASHBOARD_NAME="zashboard"
 else
     mkdir -p "${UI_TARGET}/metacubexd"

@@ -7,7 +7,7 @@
       "type": "iframe",
       "protocol": "http",
       "port": "9090",
-      "url": "/",
+      "url": "/ui/zashboard/",
       "allUsers": true
     }
   }

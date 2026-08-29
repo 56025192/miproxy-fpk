@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# MiHomo 安装后回调脚本
+# MiProxy 安装后回调脚本
 # 拆分基础配置和订阅，订阅可随时通过设置面板更新
 
 set -e
@@ -45,7 +45,7 @@ else
     PRESERVED=0
 fi
 
-# 复制 mihomo 核心
+# 复制 miproxy 核心
 log_msg "复制 mihomo 核心..."
 cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
 chmod +x "${TARGET_DIR}/mihomo"
@@ -53,7 +53,7 @@ log_msg "mihomo 核心复制完成"
 
 # 复制控制面板
 log_msg "复制控制面板: ${DASHBOARD}"
-# mihomo 通过 external-ui + external-ui-name 组合定位面板
+# miproxy 通过 external-ui + external-ui-name 组合定位面板
 # 所以面板文件必须放到 ${UI_TARGET}/${DASHBOARD}/ 子目录下
 if [ "${DASHBOARD}" = "zashboard" ]; then
     mkdir -p "${UI_TARGET}/zashboard"
@@ -66,13 +66,21 @@ else
 fi
 log_msg "控制面板复制完成: ${DASHBOARD_NAME} (路径: ${UI_TARGET}/${DASHBOARD_NAME})"
 
+# 复制桌面入口配置和图标
+log_msg "复制桌面入口配置和图标..."
+mkdir -p "${UI_TARGET}/images"
+cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
+cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/"
+chmod 666 "${UI_TARGET}/config"
+log_msg "桌面入口配置和图标复制完成"
+
 # 写入 base.yaml
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
     log_msg "复用现有 base.yaml"
 else
     log_msg "写入基础配置 base.yaml..."
 cat > "${VAR_DIR}/base.yaml" << EOF
-# MiHomo 基础配置（系统管理，请勿手动修改）
+# MiProxy 基础配置（系统管理，请勿手动修改）
 # 订阅相关字段（proxies/proxy-groups/rules/proxy-providers）请在订阅文件中配置
 
 mixed-port: ${HTTP_PORT}
@@ -97,12 +105,12 @@ external-controller-cors:
 tun:
   enable: false
 
-# GEO 数据库模式（避免 mihomo 启动时联网下载）
+# GEO 数据库模式（避免 miproxy 启动时联网下载）
 geodata-mode: true
 EOF
 fi
 
-# 复制离线 GEO 数据库（避免 mihomo 启动时联网下载）
+# 复制离线 GEO 数据库（避免 miproxy 启动时联网下载）
 if [ -d "${APP_DEST}/data" ]; then
     log_msg "复制离线 GEO 数据库..."
     cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"

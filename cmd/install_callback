@@ -11,6 +11,18 @@ TARGET_DIR="${TRIM_PKGVAR}/target"
 VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
 
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+# 解压 app.tgz（fnpack 打包时会把 app/ 目录压缩成 app.tgz）
+if [ -f "${APP_DEST}/app.tgz" ]; then
+    log_msg "解压 app.tgz..."
+    tar -xzf "${APP_DEST}/app.tgz" -C "${APP_DEST}/"
+    rm -f "${APP_DEST}/app.tgz"
+    log_msg "app.tgz 解压完成"
+fi
+
 # 向导变量
 DASHBOARD="${wizard_dashboard:-zashboard}"
 HTTP_PORT="${wizard_http_port:-7890}"
@@ -25,10 +37,6 @@ if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
 else
     REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
 fi
-
-log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
 
 # 创建必要目录
 mkdir -p "${TARGET_DIR}"

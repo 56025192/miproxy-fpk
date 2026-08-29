@@ -114,15 +114,16 @@ jobs:
           mv app/server/x86_64/mihomo app/server/mihomo
           rm -rf app/server/x86_64
           
-          # 修改 manifest 版本
+          # 修改 manifest 版本和平台
           sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
+          sed -i "s/^platform.*=.*/platform              = x86/" manifest
           
           # 验证
           echo "=== 目录结构 ==="
           ls -la app/server/
           echo ""
           echo "=== manifest ==="
-          grep "^version" manifest
+          grep -E "^version|^platform" manifest
 
       - name: 打包 FPK
         id: build-x86
@@ -185,15 +186,16 @@ jobs:
           mv app/server/arm64/mihomo app/server/mihomo
           rm -rf app/server/arm64
           
-          # 修改 manifest 版本
+          # 修改 manifest 版本和平台
           sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
+          sed -i "s/^platform.*=.*/platform              = arm/" manifest
           
           # 验证
           echo "=== 目录结构 ==="
           ls -la app/server/
           echo ""
           echo "=== manifest ==="
-          grep "^version" manifest
+          grep -E "^version|^platform" manifest
 
       - name: 打包 FPK
         id: build-arm

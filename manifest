@@ -1,0 +1,19 @@
+# MiHomo FPK Application Manifest
+# ================================
+appname               = mihomo
+version               = 1.19.30
+display_name          = MiHomo 代理核心
+desc                  = <h3>MiHomo (Clash.Meta) 代理核心</h3><p>支持 Clash 协议的全功能代理工具，包含两种 Web 控制面板可选</p><ul><li>mihomo v1.19.30 代理核心（已集成）</li><li>MetaCubeXD v1.273.0 / Zashboard v3.24.0 控制面板（安装可选）</li><li>支持 Surge、Clash、VMess、Trojan、Shadowsocks 等协议</li><li>支持规则自动分流、TUN 模式</li></ul>
+platform              = x86
+source                = thirdparty
+os_min_version        = 0.9.27
+maintainer            = Octop Agent
+maintainer_url        = https://github.com/MetaCubeX/mihomo
+distributor           = Octop
+distributor_url       = https://fnnas.com
+install_type          = 
+ctl_stop              = true
+startup               = true
+service_port          = 9090
+desktop_uidir         = ui
+desktop_applaunchname = mihomo.dashboard

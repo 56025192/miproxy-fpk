@@ -1,13 +1,12 @@
 #!/bin/bash
 
 # MiProxy 安装后回调脚本
-# 拆分基础配置和订阅，订阅可随时通过设置面板更新
 
 set -e
 
 # 目录
 APP_DEST="${TRIM_APPDEST}"     # /var/apps/miproxy
-TARGET_DIR="${TRIM_PKGVAR}/target"  # /var/appsdata/miproxy/target
+TARGET_DIR="${TRIM_PKGVAR}/target"
 VAR_DIR="${TRIM_PKGVAR}"       # /var/appsdata/miproxy
 UI_DIR="${VAR_DIR}/ui"          # /var/appsdata/miproxy/ui
 
@@ -32,13 +31,7 @@ if [ -f "${APP_DEST}/app.tgz" ]; then
     tar -xzf "${APP_DEST}/app.tgz" -C "${APP_DEST}/"
     rm -f "${APP_DEST}/app.tgz"
     log_msg "app.tgz 解压完成"
-else
-    log_msg "app.tgz 不存在，跳过解压"
 fi
-
-# 查看 APP_DEST 目录
-log_msg "APP_DEST 目录内容:"
-ls -la "${APP_DEST}/" 2>&1 || true
 
 # ==================== 向导变量 ====================
 DASHBOARD="${wizard_dashboard:-zashboard}"
@@ -72,8 +65,8 @@ if [ -f "${APP_DEST}/server/mihomo" ]; then
     chmod +x "${TARGET_DIR}/mihomo"
     log_msg "mihomo 核心复制完成"
 else
-    log_msg "错误: 未找到 mihomo - ${APP_DEST}/server/mihomo"
-    ls -la "${APP_DEST}/server/" 2>&1 || true
+    log_msg "错误: 未找到 mihomo"
+    exit 1
 fi
 
 # ==================== 复制控制面板 ====================
@@ -82,7 +75,7 @@ log_msg "复制控制面板: ${DASHBOARD}"
 if [ "${DASHBOARD}" = "zashboard" ]; then
     mkdir -p "${UI_DIR}/zashboard"
     
-    # 复制所有文件
+    # 复制所有文件（这会包含 dist 子目录）
     cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_DIR}/zashboard/" 2>/dev/null || true
     
     # 解压 zashboard.zip（如果存在）
@@ -93,20 +86,16 @@ if [ "${DASHBOARD}" = "zashboard" ]; then
         rm -rf "${UI_DIR}/zashboard-tmp"
     fi
     
-    # 如果有 dist 子目录，把内容提出来
+    # 如果有 dist 子目录，把内容提出来放到根目录
     if [ -d "${APP_DEST}/ui/zashboard/dist" ]; then
-        log_msg "复制 dist 目录内容..."
+        log_msg "提取 dist 目录内容到 zashboard 根目录..."
         cp -rf "${APP_DEST}/ui/zashboard/dist/"* "${UI_DIR}/zashboard/" 2>/dev/null || true
     fi
     
-    # 最终检查
-    log_msg "zashboard 目录内容:"
-    ls -la "${UI_DIR}/zashboard/" 2>&1 || true
-    
     DASHBOARD_NAME="zashboard"
+    PANEL_PATH="${UI_DIR}/zashboard"
 else
     mkdir -p "${UI_DIR}/metacubexd"
-    cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_DIR}/metacubexd/" 2>/dev/null || true
     
     # 解压 metacubexd.tar.gz（如果存在）
     if [ -f "${APP_DEST}/ui/metacubexd.tar.gz" ]; then
@@ -114,9 +103,12 @@ else
         tar -xzf "${APP_DEST}/ui/metacubexd.tar.gz" -C "${UI_DIR}/metacubexd-tmp"
         mv "${UI_DIR}/metacubexd-tmp/"* "${UI_DIR}/metacubexd/" 2>/dev/null || true
         rm -rf "${UI_DIR}/metacubexd-tmp"
+    else
+        cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_DIR}/metacubexd/" 2>/dev/null || true
     fi
     
     DASHBOARD_NAME="metacubexd"
+    PANEL_PATH="${UI_DIR}/metacubexd"
 fi
 log_msg "控制面板复制完成: ${DASHBOARD_NAME}"
 
@@ -145,7 +137,7 @@ log-level: info
 ipv6: false
 
 external-controller: 0.0.0.0:${API_PORT}
-external-ui: ${UI_DIR}
+external-ui: ${PANEL_PATH}
 external-ui-name: ${DASHBOARD_NAME}
 secret: ""
 

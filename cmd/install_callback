@@ -45,9 +45,19 @@ else
     PRESERVED=0
 fi
 
-# 复制 miproxy 核心
-log_msg "复制 mihomo 核心..."
-cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
+# 复制 miproxy 核心（根据架构选择）
+log_msg "检测系统架构..."
+ARCH=$(uname -m)
+if [ "${ARCH}" = "x86_64" ]; then
+    log_msg "架构: x86_64"
+    cp -f "${APP_DEST}/server/x86_64/mihomo" "${TARGET_DIR}/mihomo"
+elif [ "${ARCH}" = "aarch64" ] || [ "${ARCH}" = "arm64" ]; then
+    log_msg "架构: ARM64"
+    cp -f "${APP_DEST}/server/arm64/mihomo" "${TARGET_DIR}/mihomo"
+else
+    log_msg "不支持的架构: ${ARCH}，尝试使用 x86_64"
+    cp -f "${APP_DEST}/server/x86_64/mihomo" "${TARGET_DIR}/mihomo"
+fi
 chmod +x "${TARGET_DIR}/mihomo"
 log_msg "mihomo 核心复制完成"
 

@@ -23,19 +23,19 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  # ==================== 构建 FPK ====================
-  build:
+  # ==================== 获取变更信息 ====================
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      changes: ${{ steps.changes.outputs.changes }}
     steps:
-      # ========== 检出代码 ==========
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # ========== 确定版本号 ==========
       - name: 确定版本号
         id: version
         run: |
@@ -53,69 +53,6 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "📦 版本: ${VERSION}"
-
-      # ========== 修复脚本权限 ==========
-      - name: 修复脚本权限
-        run: |
-          for f in cmd/main cmd/install_init cmd/install_callback cmd/uninstall_init cmd/uninstall_callback cmd/upgrade_init cmd/upgrade_callback cmd/config_init cmd/config_callback; do
-            [ -f "$f" ] && sed -i 's/\r$//' "$f" && chmod +x "$f"
-          done
-          echo "✅ 脚本权限已修复"
-
-      # ========== 下载 fnpack 并打包 ==========
-      - name: 下载 fnpack 并打包
-        id: build
-        run: |
-          echo "📦 下载 fnpack..."
-          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64 || { echo "下载失败"; exit 1; }
-          chmod +x /tmp/fnpack
-          echo "✅ fnpack 下载完成"
-          
-          echo "📁 检查当前目录..."
-          ls -la
-          
-          echo "🔨 开始打包..."
-          /tmp/fnpack build --directory . 2>&1
-          BUILD_EXIT=$?
-          
-          echo "打包退出码: $BUILD_EXIT"
-          
-          # 重命名为带版本号的文件名
-          VERSION="${{ steps.version.outputs.version }}"
-          FPK=$(ls *.fpk 2>/dev/null | head -1)
-          if [ -n "$FPK" ]; then
-            NEW_FPK="miproxy-${VERSION}.fpk"
-            mv "$FPK" "$NEW_FPK"
-            echo "✅ FPK 打包成功: $NEW_FPK"
-            echo "fpk_file=$NEW_FPK" >> $GITHUB_OUTPUT
-          else
-            echo "❌ FPK 打包失败"
-            ls -la
-            exit 1
-          fi
-
-      # ========== 上传产物 ==========
-      - name: 上传 FPK
-        uses: actions/upload-artifact@v4
-        with:
-          name: miproxy-fpk
-          path: "*.fpk"
-          retention-days: 7
-
-  # ==================== 创建草稿 Release ====================
-  draft:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: 下载 FPK
-        uses: actions/download-artifact@v4
-        with:
-          name: miproxy-fpk
 
       - name: 获取变更信息
         id: changes
@@ -140,16 +77,184 @@ jobs:
           echo "${CHANGES}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+  # ==================== 构建 x86_64 FPK ====================
+  build-x86:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 确定版本号
+        run: |
+          echo "version=${{ needs.changes.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "tag=${{ needs.changes.outputs.tag }}" >> $GITHUB_OUTPUT
+
+      - name: 修复脚本权限
+        run: |
+          for f in cmd/main cmd/install_init cmd/install_callback cmd/uninstall_init cmd/uninstall_callback cmd/upgrade_init cmd/upgrade_callback cmd/config_init cmd/config_callback; do
+            [ -f "$f" ] && sed -i 's/\r$//' "$f" && chmod +x "$f"
+          done
+          echo "✅ 脚本权限已修复"
+
+      - name: 下载 fnpack
+        run: |
+          echo "📦 下载 fnpack..."
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
+          chmod +x /tmp/fnpack
+          echo "✅ fnpack 下载完成"
+
+      - name: 准备 x86_64 包
+        run: |
+          echo "🔧 准备 x86_64 打包目录..."
+          
+          # 只保留 x86_64 的 mihomo
+          rm -rf app/server/arm64
+          mv app/server/x86_64 app/server/mihomo-tmp
+          rm -rf app/server
+          mkdir -p app/server
+          mv app/server/mihomo-tmp app/server/mihomo
+          
+          # 修改 manifest 版本
+          sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
+          
+          # 验证
+          echo "=== 目录结构 ==="
+          ls -la app/server/
+          echo ""
+          echo "=== manifest ==="
+          grep "^version" manifest
+
+      - name: 打包 FPK
+        id: build-x86
+        run: |
+          echo "🔨 开始打包 x86_64..."
+          /tmp/fnpack build --directory . 2>&1
+          
+          FPK=$(ls *.fpk 2>/dev/null | head -1)
+          if [ -n "$FPK" ]; then
+            NEW_FPK="miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk"
+            mv "$FPK" "$NEW_FPK"
+            echo "✅ FPK 打包成功: $NEW_FPK"
+          else
+            echo "❌ FPK 打包失败"
+            ls -la
+            exit 1
+          fi
+
+      - name: 上传 FPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: miproxy-x86_64
+          path: "*.fpk"
+          retention-days: 7
+
+  # ==================== 构建 ARM64 FPK ====================
+  build-arm:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 确定版本号
+        run: |
+          echo "version=${{ needs.changes.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "tag=${{ needs.changes.outputs.tag }}" >> $GITHUB_OUTPUT
+
+      - name: 修复脚本权限
+        run: |
+          for f in cmd/main cmd/install_init cmd/install_callback cmd/uninstall_init cmd/uninstall_callback cmd/upgrade_init cmd/upgrade_callback cmd/config_init cmd/config_callback; do
+            [ -f "$f" ] && sed -i 's/\r$//' "$f" && chmod +x "$f"
+          done
+          echo "✅ 脚本权限已修复"
+
+      - name: 下载 fnpack
+        run: |
+          echo "📦 下载 fnpack..."
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
+          chmod +x /tmp/fnpack
+          echo "✅ fnpack 下载完成"
+
+      - name: 准备 ARM64 包
+        run: |
+          echo "🔧 准备 ARM64 打包目录..."
+          
+          # 只保留 ARM64 的 mihomo
+          rm -rf app/server/x86_64
+          mv app/server/arm64 app/server/mihomo-tmp
+          rm -rf app/server
+          mkdir -p app/server
+          mv app/server/mihomo-tmp app/server/mihomo
+          
+          # 修改 manifest 版本
+          sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
+          
+          # 验证
+          echo "=== 目录结构 ==="
+          ls -la app/server/
+          echo ""
+          echo "=== manifest ==="
+          grep "^version" manifest
+
+      - name: 打包 FPK
+        id: build-arm
+        run: |
+          echo "🔨 开始打包 ARM64..."
+          /tmp/fnpack build --directory . 2>&1
+          
+          FPK=$(ls *.fpk 2>/dev/null | head -1)
+          if [ -n "$FPK" ]; then
+            NEW_FPK="miproxy-${{ needs.changes.outputs.version }}-arm64.fpk"
+            mv "$FPK" "$NEW_FPK"
+            echo "✅ FPK 打包成功: $NEW_FPK"
+          else
+            echo "❌ FPK 打包失败"
+            ls -la
+            exit 1
+          fi
+
+      - name: 上传 FPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: miproxy-arm64
+          path: "*.fpk"
+          retention-days: 7
+
+  # ==================== 创建草稿 Release ====================
+  release:
+    needs: [changes, build-x86, build-arm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 下载 x86_64 FPK
+        uses: actions/download-artifact@v4
+        with:
+          name: miproxy-x86_64
+          path: .
+
+      - name: 下载 ARM64 FPK
+        uses: actions/download-artifact@v4
+        with:
+          name: miproxy-arm64
+          path: .
+
       - name: 创建草稿 Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          name: "MiProxy ${{ needs.build.outputs.version }}"
+          tag_name: ${{ needs.changes.outputs.tag }}
+          name: "MiProxy ${{ needs.changes.outputs.version }}"
           draft: true
           prerelease: false
           body: |
-            ## MiProxy ${{ needs.build.outputs.version }}
+            ## MiProxy ${{ needs.changes.outputs.version }}
 
             飞牛 NAS (fnOS) FPK 应用
 
@@ -158,14 +263,17 @@ jobs:
             ### 📋 变更详情
 
             ```
-            ${{ needs.draft.outputs.changes }}
+            ${{ needs.changes.outputs.changes }}
             ```
 
             ---
 
             ### 📥 下载
 
-            - **FPK**: miproxy-${{ needs.build.outputs.version }}.fpk
+            | 架构 | 文件 | 说明 |
+            |------|------|------|
+            | x86_64 | [miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.changes.outputs.tag }}/miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk) | Intel/AMD 处理器 |
+            | ARM64 | [miproxy-${{ needs.changes.outputs.version }}-arm64.fpk](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.changes.outputs.tag }}/miproxy-${{ needs.changes.outputs.version }}-arm64.fpk) | ARM 处理器（如树莓派） |
 
             ---
 
@@ -184,7 +292,12 @@ jobs:
         run: |
           echo "## ✅ 构建完成" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**版本**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**版本**: ${{ needs.changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 架构 | 文件 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| x86_64 | miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk |" >> $GITHUB_STEP_SUMMARY
+          echo "| ARM64 | miproxy-${{ needs.changes.outputs.version }}-arm64.fpk |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**草稿 Release**: ${{ steps.create_release.outputs.url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

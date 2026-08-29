@@ -44,11 +44,12 @@ jobs:
         run: |
           echo "📥 下载 mihomo x86_64..."
           
-          MIHOMO_VERSION=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/')
+          # 获取最新版本号
+          MIHOMO_VERSION=$(curl -sL "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
           echo "mihomo_version=${MIHOMO_VERSION}" >> $GITHUB_ENV
           echo "📦 mihomo 版本: ${MIHOMO_VERSION}"
           
-          # 下载并解压
+          # 下载并解压（使用正确的文件名格式）
           curl -sL "https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/mihomo-linux-amd64-v${MIHOMO_VERSION}.gz" | gunzip > mihomo-x86
           
           if file mihomo-x86 | grep -q "ELF"; then
@@ -68,7 +69,12 @@ jobs:
         run: |
           echo "📥 下载 mihomo ARM64..."
           
-          MIHOMO_VERSION=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/')
+          # 获取最新版本号（如果没有环境变量）
+          if [ -z "${{ env.mihomo_version }}" ]; then
+            MIHOMO_VERSION=$(curl -sL "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
+          else
+            MIHOMO_VERSION="${{ env.mihomo_version }}"
+          fi
           
           # 下载并解压
           curl -sL "https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/mihomo-linux-arm64-v${MIHOMO_VERSION}.gz" | gunzip > mihomo-arm64
@@ -92,25 +98,38 @@ jobs:
           
           mkdir -p app/data
           
-          # geoip.dat
+          # 获取 Loyalsoldier/v2ray-rules-dat 最新版本
+          GEO_VERSION=$(curl -sL "https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases/latest" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          echo "geo_version=${GEO_VERSION}" >> $GITHUB_ENV
+          echo "📦 GEO 版本: ${GEO_VERSION}"
+          
+          # geoip.dat (来自 Loyalsoldier/v2ray-rules-dat)
           echo "  - geoip.dat"
-          curl -sL "https://github.com/MetaCubeX/mihomo-ruleset/releases/latest/download/geoip.dat" -o app/data/geoip.dat
+          curl -sL "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${GEO_VERSION}/geoip.dat" -o app/data/geoip.dat
           
-          # geosite.dat
-          echo "  - geosite.dat"  
-          curl -sL "https://github.com/MetaCubeX/mihomo-ruleset/releases/latest/download/geosite.dat" -o app/data/geosite.dat
+          # geosite.dat (来自 Loyalsoldier/v2ray-rules-dat)
+          echo "  - geosite.dat"
+          curl -sL "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${GEO_VERSION}/geosite.dat" -o app/data/geosite.dat
           
-          # Country.mmdb
+          # Country.mmdb (来自 Loyalsoldier/geoip)
           echo "  - Country.mmdb"
-          curl -sL "https://github.com/MetaCubeX/mihomo-ruleset/releases/latest/download/Country.mmdb" -o app/data/Country.mmdb
+          curl -sL "https://github.com/Loyalsoldier/geoip/releases/download/${GEO_VERSION}/Country.mmdb" -o app/data/Country.mmdb
           
           # 验证
+          echo ""
+          echo "=== 文件大小验证 ==="
           for f in geoip.dat geosite.dat Country.mmdb; do
             if [ -s "app/data/$f" ]; then
               SIZE=$(du -h "app/data/$f" | cut -f1)
-              echo "  ✅ $f ($SIZE)"
+              BYTES=$(wc -c < "app/data/$f")
+              echo "  ✅ $f ($SIZE, $BYTES bytes)"
+              # 验证文件大小（geoip.dat 应该 > 1MB）
+              if [ "$f" = "geoip.dat" ] && [ "$BYTES" -lt 1000000 ]; then
+                echo "  ⚠️ geoip.dat 文件过小，可能下载失败"
+                exit 1
+              fi
             else
-              echo "  ❌ $f 下载失败"
+              echo "  ❌ $f 下载失败或文件为空"
               exit 1
             fi
           done
@@ -122,19 +141,64 @@ jobs:
         run: |
           echo "📥 下载 Zashboard 面板..."
           
-          ZASHBOARD_VERSION=$(curl -s https://api.github.com/repos/Zephyruso/zashboard/releases/latest | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/')
+          # 获取最新版本号
+          ZASHBOARD_VERSION=$(curl -sL "https://api.github.com/repos/Zephyruso/zashboard/releases/latest" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
           echo "zashboard_version=${ZASHBOARD_VERSION}" >> $GITHUB_ENV
           echo "📦 Zashboard 版本: ${ZASHBOARD_VERSION}"
           
+          # 清理旧文件
+          rm -rf app/ui/zashboard app/ui/zashboard.zip
+          
           # 下载完整版（包含所有字体）
-          curl -sL "https://github.com/Zephyruso/zashboard/releases/download/v${ZASHBOARD_VERSION}/dist.zip" -o zashboard.zip
+          curl -sL "https://github.com/Zephyruso/zashboard/releases/download/v${ZASHBOARD_VERSION}/dist-cdn-fonts.zip" -o zashboard.zip
           
           if [ -s zashboard.zip ]; then
-            rm -rf app/ui/zashboard
+            # 解压到临时目录
+            mkdir -p zashboard-tmp
             unzip -q zashboard.zip -d zashboard-tmp
-            mv zashboard-tmp app/ui/zashboard
+            
+            # 检查解压结果
+            echo "=== 解压内容 ==="
+            ls -la zashboard-tmp/
+            
+            # 创建目标目录
+            mkdir -p app/ui/zashboard/dist
+            
+            # dist.zip 解压后可能是：
+            # 1. 直接包含 index.html 等文件
+            # 2. 包含 dist/ 子目录
+            
+            if [ -f "zashboard-tmp/index.html" ]; then
+              # 情况1: 直接是文件，移动到 dist/
+              echo "情况1: 解压后直接是文件"
+              mv zashboard-tmp/* app/ui/zashboard/dist/
+            elif [ -d "zashboard-tmp/dist" ]; then
+              # 情况2: 包含 dist/ 子目录
+              echo "情况2: 解压后包含 dist/ 子目录"
+              mv zashboard-tmp/dist/* app/ui/zashboard/dist/
+            else
+              # 尝试其他可能
+              echo "未知解压结构，尝试移动所有内容"
+              mv zashboard-tmp/* app/ui/zashboard/dist/ 2>/dev/null || true
+            fi
+            
             rm -rf zashboard-tmp zashboard.zip
-            echo "✅ Zashboard 下载成功"
+            
+            # 验证
+            echo ""
+            echo "=== Zashboard 目录结构 ==="
+            ls -la app/ui/zashboard/
+            echo ""
+            echo "=== dist 目录内容 ==="
+            ls app/ui/zashboard/dist/ | head -10
+            
+            if [ -f "app/ui/zashboard/dist/index.html" ]; then
+              echo ""
+              echo "✅ Zashboard 下载成功 (版本 v${ZASHBOARD_VERSION})"
+            else
+              echo "❌ Zashboard 下载失败：未找到 index.html"
+              exit 1
+            fi
           else
             echo "❌ Zashboard 下载失败"
             exit 1
@@ -147,19 +211,25 @@ jobs:
         run: |
           echo "📥 下载 MetaCubeXD 面板..."
           
-          METAXD_VERSION=$(curl -s https://api.github.com/repos/MetaCubeX/metacubexd/releases/latest | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/')
+          # 获取最新版本号
+          METAXD_VERSION=$(curl -sL "https://api.github.com/repos/MetaCubeX/metacubexd/releases/latest" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
           echo "metacubexd_version=${METAXD_VERSION}" >> $GITHUB_ENV
           echo "📦 MetaCubeXD 版本: ${METAXD_VERSION}"
+          
+          # 清理旧文件
+          rm -rf app/ui/metacubexd app/ui/metacubexd.tar.gz
           
           # 下载前端资源
           curl -sL "https://github.com/MetaCubeX/metacubexd/releases/download/v${METAXD_VERSION}/compressed-dist.tgz" -o metacubexd.tar.gz
           
           if [ -s metacubexd.tar.gz ]; then
-            rm -rf app/ui/metacubexd
             mkdir -p app/ui/metacubexd
             tar -xzf metacubexd.tar.gz -C app/ui/metacubexd/
             rm -f metacubexd.tar.gz
-            echo "✅ MetaCubeXD 下载成功"
+            echo "✅ MetaCubeXD 下载成功 (版本 v${METAXD_VERSION})"
+            echo ""
+            echo "=== 验证目录结构 ==="
+            ls app/ui/metacubexd/ | head -10
           else
             echo "❌ MetaCubeXD 下载失败"
             exit 1
@@ -182,9 +252,10 @@ jobs:
             
             COMMIT_MSG="🔄 自动同步二进制文件
             
-            - mihomo: ${{ env.mihomo_version || '跳過' }}
-            - Zashboard: ${{ env.zashboard_version || '跳過' }}
-            - MetaCubeXD: ${{ env.metacubexd_version || '跳過' }}
+            - mihomo: ${{ env.mihomo_version || '跳过' }}
+            - Zashboard: ${{ env.zashboard_version || '跳过' }}
+            - MetaCubeXD: ${{ env.metacubexd_version || '跳过' }}
+            - GEO: ${{ env.geo_version || '跳过' }}
             
             日期: $(date +'%Y-%m-%d')
             触发: ${{ github.event_name }}"

@@ -1,0 +1,221 @@
+name: Build & Release
+
+on:
+  # push 到 main 分支时触发
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'cmd/**'
+      - 'config/**'
+      - 'wizard/**'
+      - 'manifest'
+  
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (如 2.1.7，不填则自动从 manifest 读取)'
+        required: false
+        default: ''
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  # ==================== 作业 1: 分析变更 ====================
+  analyze:
+    runs-on: ubuntu-latest
+    outputs:
+      mihomo_changed: ${{ steps.changes.outputs.mihomo_changed }}
+      geo_changed: ${{ steps.changes.outputs.geo_changed }}
+      ui_changed: ${{ steps.changes.outputs.ui_changed }}
+      version: ${{ steps.version.outputs.version }}
+      has_changes: ${{ steps.changes.outputs.has_changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep "^version" manifest | sed 's/.*= *//')
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 版本: ${VERSION}"
+
+      - name: Analyze changes
+        id: changes
+        run: |
+          # 获取上一个 release tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "上一个版本: ${LAST_TAG:-无}"
+          
+          # 比较变更范围
+          if [ -n "$LAST_TAG" ]; then
+            RANGE="${LAST_TAG}..HEAD"
+          else
+            RANGE="--name-only --max-count=100"
+          fi
+          
+          # 检查各组件变更
+          MIHOMO=""
+          GEO=""
+          UI=""
+          
+          for f in $(git diff ${RANGE} --name-only 2>/dev/null | grep -v "^$"); do
+            case "$f" in
+              app/server/*) MIHOMO="true" ;;
+              app/data/*) GEO="true" ;;
+              app/ui/*) UI="true" ;;
+            esac
+          done
+          
+          echo "mihomo_changed=${MIHOMO:-false}" >> $GITHUB_OUTPUT
+          echo "geo_changed=${GEO:-false}" >> $GITHUB_OUTPUT
+          echo "ui_changed=${UI:-false}" >> $GITHUB_OUTPUT
+          
+          if [ "${MIHOMO}" == "true" ] || [ "${GEO}" == "true" ] || [ "${UI}" == "true" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "✅ 检测到变更"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ 无组件变更"
+          fi
+          
+          echo "---"
+          echo "mihomo: ${MIHOMO:-无变更}"
+          echo "geo: ${GEO:-无变更}"
+          echo "ui: ${UI:-无变更}"
+
+  # ==================== 作业 2: 构建 FPK ====================
+  build:
+    needs: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: needs.analyze.outputs.has_changes == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: Install fnpack
+        run: |
+          echo "📦 安装 fnpack..."
+          curl -sL "https://github.com/fnndsc/fnos-cli/releases/latest/download/fnos-cli-linux-amd64" -o /usr/local/bin/fnpack
+          chmod +x /usr/local/bin/fnpack
+          fnpack --version
+
+      - name: Build FPK
+        run: |
+          echo "🔨 打包 FPK..."
+          fnpack build . 2>&1
+          
+          # 查找生成的 fpk 文件
+          FPK=$(ls -t *.fpk 2>/dev/null | head -1)
+          if [ -n "$FPK" ]; then
+            echo "✅ FPK 打包成功: $FPK"
+            echo "fpk_file=$FPK" >> $GITHUB_OUTPUT
+          else
+            echo "❌ FPK 打包失败"
+            exit 1
+          fi
+
+      - name: Upload FPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: miproxy-fpk
+          path: ${{ runner.temp }}/*.fpk
+          retention-days: 1
+
+  # ==================== 作业 3: 创建 Release ====================
+  release:
+    needs: [analyze, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Download FPK
+        uses: actions/download-artifact@v4
+        with:
+          name: miproxy-fpk
+
+      - name: Get changed files list
+        id: changed
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            CHANGES=$(git log ${LAST_TAG}..HEAD --oneline --format="• %s")
+          else
+            CHANGES=$(git log -10 --oneline --format="• %s")
+          fi
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "${CHANGES}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.analyze.outputs.version }}
+          name: MiProxy v${{ needs.analyze.outputs.version }}
+          draft: false
+          prerelease: false
+          body: |
+            ## MiProxy v${{ needs.analyze.outputs.version }}
+
+            自动构建版本
+
+            ### 📋 变更内容
+
+            ${{ needs.analyze.outputs.changes }}
+
+            ### 🔄 组件更新
+
+            | 组件 | 状态 |
+            |------|------|
+            | mihomo 内核 | ${{ needs.analyze.outputs.mihomo_changed == 'true' && '✅ 已更新' || '⬜ 无变更' }} |
+            | GEO 数据库 | ${{ needs.analyze.outputs.geo_changed == 'true' && '✅ 已更新' || '⬜ 无变更' }} |
+            | 控制面板 | ${{ needs.analyze.outputs.ui_changed == 'true' && '✅ 已更新' || '⬜ 无变更' }} |
+
+            ### 📥 下载
+
+            - **FPK**: miproxy-v${{ needs.analyze.outputs.version }}.fpk
+
+            ---
+            *由 GitHub Actions 自动构建*
+          files: |
+            *.fpk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update latest tag
+        run: |
+          echo "🏷️ 更新 latest tag..."
+          git tag -d latest 2>/dev/null || true
+          git tag -a latest -m "Latest v${{ needs.analyze.outputs.version }}"
+          git push origin latest --force
+          echo "✅ latest tag 已更新"
+
+      - name: Cleanup old artifacts
+        run: |
+          echo "🧹 清理旧构建..."
+          # 删除旧的 pre-release (保留最近 3 个)
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" | \
+            python3 -c "
+import json, sys
+releases = json.load(sys.stdin)
+for r in releases[3:]:
+    if not r['prerelease']:
+        print(f\"删除旧 release: {r['tag_name']}\")
+" 2>/dev/null || true

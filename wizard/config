@@ -4,7 +4,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "切换面板后会替换控制面板文件并重启 mihomo，订阅配置保持不变。"
+        "helpText": "切换面板后会替换控制面板文件并重启代理，订阅配置保持不变。"
       },
       {
         "type": "radio",
@@ -12,8 +12,8 @@
         "label": "选择控制面板",
         "defaultValue": "zashboard",
         "options": [
-          { "value": "zashboard", "label": "Zashboard（推荐）— 现代化界面，功能丰富，支持深色模式" },
-          { "value": "metacubexd", "label": "MetaCubeXD — 经典 Clash 风格界面，轻量稳定" }
+          { "value": "zashboard", "label": "Zashboard（推荐）— 现代化界面，功能丰富" },
+          { "value": "metacubexd", "label": "MetaCubeXD — 经典风格，轻量稳定" }
         ]
       }
     ]
@@ -23,7 +23,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "在此修改订阅地址后点击保存，mihomo 会自动重新拉取并重启。订阅文件应为 YAML 格式，包含 proxies / proxy-groups / rules 等字段。"
+        "helpText": "修改订阅后点击保存，代理会自动重新拉取并重启。"
       },
       {
         "type": "text",
@@ -31,7 +31,7 @@
         "label": "远程订阅 URL",
         "initValue": "",
         "rules": [
-          { "pattern": "^https?://.*|^$", "message": "请输入正确的 URL 格式（http/https），留空表示不使用远程订阅" }
+          { "pattern": "^https?://.*|^$", "message": "请输入正确的 URL 格式" }
         ]
       },
       {
@@ -56,6 +56,15 @@
           { "value": "24", "label": "每 24 小时" }
         ],
         "rules": [{ "required": true, "message": "请选择刷新间隔" }]
+      }
+    ]
+  },
+  {
+    "stepTitle": "关于",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/\n\n📄 主配置: config.yaml\n📄 订阅: subscription.yaml\n📄 日志: info.log\n\n版本: v2.0.6 | MiProxy"
       }
     ]
   }

@@ -109,12 +109,10 @@ jobs:
         run: |
           echo "🔧 准备 x86_64 打包目录..."
           
-          # 只保留 x86_64 的 mihomo
+          # 只保留 x86_64 的 mihomo（移动到正确位置）
           rm -rf app/server/arm64
-          mv app/server/x86_64 app/server/mihomo-tmp
-          rm -rf app/server
-          mkdir -p app/server
-          mv app/server/mihomo-tmp app/server/mihomo
+          mv app/server/x86_64/mihomo app/server/mihomo
+          rm -rf app/server/x86_64
           
           # 修改 manifest 版本
           sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
@@ -182,12 +180,10 @@ jobs:
         run: |
           echo "🔧 准备 ARM64 打包目录..."
           
-          # 只保留 ARM64 的 mihomo
+          # 只保留 ARM64 的 mihomo（移动到正确位置）
           rm -rf app/server/x86_64
-          mv app/server/arm64 app/server/mihomo-tmp
-          rm -rf app/server
-          mkdir -p app/server
-          mv app/server/mihomo-tmp app/server/mihomo
+          mv app/server/arm64/mihomo app/server/mihomo
+          rm -rf app/server/arm64
           
           # 修改 manifest 版本
           sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest

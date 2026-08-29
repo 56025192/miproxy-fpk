@@ -1,12 +1,5 @@
 {
     "data-share": {
-        "shares": [
-            {
-                "name": "miproxy",
-                "permission": {
-                    "rw": ["miproxy"]
-                }
-            }
-        ]
+        "shares": []
     }
 }

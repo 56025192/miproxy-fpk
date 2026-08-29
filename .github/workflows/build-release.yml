@@ -60,11 +60,18 @@ jobs:
         id: build
         run: |
           echo "📦 下载 fnpack..."
-          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64 || { echo "下载失败"; exit 1; }
           chmod +x /tmp/fnpack
+          echo "✅ fnpack 下载完成"
+          
+          echo "📁 检查当前目录..."
+          ls -la
           
           echo "🔨 开始打包..."
-          /tmp/fnpack build --directory .
+          /tmp/fnpack build --directory . 2>&1
+          BUILD_EXIT=$?
+          
+          echo "打包退出码: $BUILD_EXIT"
           
           FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then

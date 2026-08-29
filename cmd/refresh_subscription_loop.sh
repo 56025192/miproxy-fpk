@@ -1,20 +1,20 @@
 #!/bin/bash
-# MiHomo 订阅刷新守护进程
+# MiProxy 订阅刷新守护进程
 #
-# 每 N 秒检查一次订阅（远程 URL 或本地文件），发现变化就重新生成 config.yaml 并重启 mihomo。
+# 每 N 秒检查一次订阅（远程 URL 或本地文件），发现变化就重新生成 config.yaml 并重启 miproxy。
 # 由 cmd/main 在 start 时启动，stop 时清理。
 #
 # 配置（环境变量）：
 #   SUBSCRIPTION_URL    远程订阅 URL（优先）
 #   SUBSCRIPTION_PATH   本地订阅文件路径
 #   REFRESH_INTERVAL    刷新间隔（秒），默认 21600（6 小时），0 表示禁用
-#   VAR_DIR             mihomo 数据目录（${TRIM_PKGVAR}）
+#   VAR_DIR             miproxy 数据目录（${TRIM_PKGVAR}）
 #   SCRIPT_DIR          cmd 目录（脚本所在目录）
 
 set -u
 
-VAR_DIR="${VAR_DIR:-/vol1/@appdata/mihomo}"
-SCRIPT_DIR="${SCRIPT_DIR:-/var/apps/mihomo/cmd}"
+VAR_DIR="${VAR_DIR:-/vol1/@appdata/miproxy}"
+SCRIPT_DIR="${SCRIPT_DIR:-/var/apps/miproxy/cmd}"
 LOG_FILE="${VAR_DIR}/subscription_refresh.log"
 PID_FILE="${VAR_DIR}/refresh_subscription.pid"
 LOCK_FILE="${VAR_DIR}/refresh_subscription.lock"
@@ -93,8 +93,8 @@ refresh_subscription() {
     return 0
 }
 
-# 重新生成 config.yaml 并重启 mihomo
-restart_mihomo() {
+# 重新生成 config.yaml 并重启 miproxy
+restart_miproxy() {
     log_msg "重新生成 config.yaml ..."
     if ! python3 "${SCRIPT_DIR}/merge_config.py" \
             "${VAR_DIR}/base.yaml" \
@@ -105,11 +105,11 @@ restart_mihomo() {
     fi
     chmod 666 "${VAR_DIR}/config.yaml"
 
-    log_msg "重启 mihomo ..."
+    log_msg "重启 miproxy ..."
     bash "${SCRIPT_DIR}/main" stop >>"${LOG_FILE}" 2>&1 || true
     sleep 2
     bash "${SCRIPT_DIR}/main" start >>"${LOG_FILE}" 2>&1
-    log_msg "✅ mihomo 已重启"
+    log_msg "✅ miproxy 已重启"
     return 0
 }
 
@@ -132,7 +132,7 @@ log_msg "═══════════════════════�
 # 启动后立即检查一次（不等第一次 tick）
 sleep 5
 if is_current && refresh_subscription; then
-    restart_mihomo
+    restart_miproxy
 fi
 
 # 主循环
@@ -147,6 +147,6 @@ while true; do
     fi
 
     if refresh_subscription; then
-        restart_mihomo
+        restart_miproxy
     fi
 done

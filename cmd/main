@@ -5,7 +5,7 @@ PID_FILE="${TRIM_PKGVAR}/app.pid"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_subscription.pid"
 REFRESH_CONF="${TRIM_PKGVAR}/refresh_subscription.conf"
 
-# MiHomo 核心路径（TRIM_PKGVAR 就是 var 目录）
+# MiProxy 核心路径（TRIM_PKGVAR 就是 var 目录）
 MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
 MIHOMO_DIR="${TRIM_PKGVAR}"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
@@ -106,7 +106,7 @@ stop_refresh_daemon() {
     return 0
 }
 
-# 只重启守护进程（不改 mihomo 状态），用于刷新间隔变更后
+# 只重启守护进程（不改 miproxy 状态），用于刷新间隔变更后
 restart_refresh_daemon() {
     log_msg "重启守护进程..."
     stop_refresh_daemon
@@ -115,7 +115,7 @@ restart_refresh_daemon() {
     log_msg "守护进程重启完成"
 }
 
-# ============ mihomo 主进程管理 ============
+# ============ miproxy 主进程管理 ============
 
 start_process() {
     if status; then
@@ -188,7 +188,7 @@ status() {
     return 1
 }
 
-# 完整启动：先停守护（避免它在我们停 mihomo 后又拉起），再起 mihomo，再起守护
+# 完整启动：先停守护（避免它在我们停 miproxy 后又拉起），再起 miproxy，再起守护
 start_full() {
     stop_refresh_daemon
     sleep 1
@@ -197,7 +197,7 @@ start_full() {
     start_refresh_daemon
 }
 
-# 完整停止：先停守护（避免它在我们停 mihomo 后又拉起），再停 mihomo
+# 完整停止：先停守护（避免它在我们停 miproxy 后又拉起），再停 miproxy
 stop_full() {
     stop_refresh_daemon
     stop_process

@@ -1,39 +1,17 @@
 #!/bin/bash
 
 # MiProxy 安装后回调脚本
+# 拆分基础配置和订阅，订阅可随时通过设置面板更新
 
 set -e
 
-# 目录
-APP_DEST="${TRIM_APPDEST}"     # /var/apps/miproxy
+# 目录（TRIM_PKGVAR 是 var 目录本身，TRIM_APPDEST 是 app 目录）
+APP_DEST="${TRIM_APPDEST}"
 TARGET_DIR="${TRIM_PKGVAR}/target"
-VAR_DIR="${TRIM_PKGVAR}"       # /var/appsdata/miproxy
-UI_DIR="${VAR_DIR}/ui"          # /var/appsdata/miproxy/ui
+VAR_DIR="${TRIM_PKGVAR}"
+UI_TARGET="${VAR_DIR}/ui"
 
-log_msg() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-}
-
-log_msg "========== MiProxy 安装开始 =========="
-log_msg "APP_DEST: ${APP_DEST}"
-log_msg "TARGET_DIR: ${TARGET_DIR}"
-log_msg "VAR_DIR: ${VAR_DIR}"
-log_msg "UI_DIR: ${UI_DIR}"
-
-# 创建必要目录
-mkdir -p "${TARGET_DIR}"
-mkdir -p "${VAR_DIR}"
-mkdir -p "${UI_DIR}"
-
-# ==================== 解压 app.tgz ====================
-if [ -f "${APP_DEST}/app.tgz" ]; then
-    log_msg "解压 app.tgz..."
-    tar -xzf "${APP_DEST}/app.tgz" -C "${APP_DEST}/"
-    rm -f "${APP_DEST}/app.tgz"
-    log_msg "app.tgz 解压完成"
-fi
-
-# ==================== 向导变量 ====================
+# 向导变量
 DASHBOARD="${wizard_dashboard:-zashboard}"
 HTTP_PORT="${wizard_http_port:-7890}"
 API_PORT="${wizard_api_port:-9090}"
@@ -41,14 +19,23 @@ SUB_TYPE="${wizard_sub_type:-none}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
-
+# 把小时转成秒
 if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
     REFRESH_INTERVAL_SEC=0
 else
     REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
 fi
 
-# ==================== 检测保留数据 ====================
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+# 创建必要目录
+mkdir -p "${TARGET_DIR}"
+mkdir -p "${VAR_DIR}"
+mkdir -p "${UI_TARGET}"
+
+# 检测是否有上次保留的数据
 PRESERVED_FLAG="${VAR_DIR}/.preserved"
 if [ -f "${PRESERVED_FLAG}" ]; then
     log_msg "检测到上次保留的数据"
@@ -58,95 +45,190 @@ else
     PRESERVED=0
 fi
 
-# ==================== 复制 mihomo 核心 ====================
+# 复制 miproxy 核心
 log_msg "复制 mihomo 核心..."
-if [ -f "${APP_DEST}/server/mihomo" ]; then
-    cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
-    chmod +x "${TARGET_DIR}/mihomo"
-    log_msg "mihomo 核心复制完成"
-else
-    log_msg "错误: 未找到 mihomo"
-    exit 1
-fi
+cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
+chmod +x "${TARGET_DIR}/mihomo"
+log_msg "mihomo 核心复制完成"
 
-# ==================== 复制控制面板 ====================
+# 复制控制面板
 log_msg "复制控制面板: ${DASHBOARD}"
-
+# miproxy 通过 external-ui + external-ui-name 组合定位面板
+# 所以面板文件必须放到 ${UI_TARGET}/${DASHBOARD}/ 子目录下
 if [ "${DASHBOARD}" = "zashboard" ]; then
-    mkdir -p "${UI_DIR}/zashboard"
-    
-    # 复制所有文件（这会包含 dist 子目录）
-    cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_DIR}/zashboard/" 2>/dev/null || true
-    
-    # 解压 zashboard.zip（如果存在）
-    if [ -f "${APP_DEST}/ui/zashboard.zip" ]; then
-        log_msg "解压 zashboard.zip..."
-        unzip -q -o "${APP_DEST}/ui/zashboard.zip" -d "${UI_DIR}/zashboard-tmp"
-        mv "${UI_DIR}/zashboard-tmp/"* "${UI_DIR}/zashboard/" 2>/dev/null || true
-        rm -rf "${UI_DIR}/zashboard-tmp"
-    fi
-    
-    # 如果有 dist 子目录，把内容提出来放到根目录
-    if [ -d "${APP_DEST}/ui/zashboard/dist" ]; then
-        log_msg "提取 dist 目录内容到 zashboard 根目录..."
-        cp -rf "${APP_DEST}/ui/zashboard/dist/"* "${UI_DIR}/zashboard/" 2>/dev/null || true
-    fi
-    
+    mkdir -p "${UI_TARGET}/zashboard"
+    cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/"
     DASHBOARD_NAME="zashboard"
-    PANEL_PATH="${UI_DIR}/zashboard"
 else
-    mkdir -p "${UI_DIR}/metacubexd"
-    
-    # 解压 metacubexd.tar.gz（如果存在）
-    if [ -f "${APP_DEST}/ui/metacubexd.tar.gz" ]; then
-        log_msg "解压 metacubexd.tar.gz..."
-        tar -xzf "${APP_DEST}/ui/metacubexd.tar.gz" -C "${UI_DIR}/metacubexd-tmp"
-        mv "${UI_DIR}/metacubexd-tmp/"* "${UI_DIR}/metacubexd/" 2>/dev/null || true
-        rm -rf "${UI_DIR}/metacubexd-tmp"
-    else
-        cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_DIR}/metacubexd/" 2>/dev/null || true
-    fi
-    
+    mkdir -p "${UI_TARGET}/metacubexd"
+    cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/"
     DASHBOARD_NAME="metacubexd"
-    PANEL_PATH="${UI_DIR}/metacubexd"
 fi
-log_msg "控制面板复制完成: ${DASHBOARD_NAME}"
+log_msg "控制面板复制完成: ${DASHBOARD_NAME} (路径: ${UI_TARGET}/${DASHBOARD_NAME})"
 
-# ==================== 复制桌面配置和图标 ====================
+# 复制桌面入口配置和图标
 log_msg "复制桌面入口配置和图标..."
-mkdir -p "${UI_DIR}/images"
+mkdir -p "${UI_TARGET}/images"
+cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
+cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/"
+chmod 666 "${UI_TARGET}/config"
+log_msg "桌面入口配置和图标复制完成"
 
-if [ -f "${APP_DEST}/ui/config" ]; then
-    cp -f "${APP_DEST}/ui/config" "${UI_DIR}/config"
-    chmod 666 "${UI_DIR}/config"
-fi
-
-cp -f "${APP_DEST}/ui/images/"* "${UI_DIR}/images/" 2>/dev/null || true
-
-# ==================== 写入 base.yaml ====================
+# 写入 base.yaml
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
     log_msg "复用现有 base.yaml"
 else
     log_msg "写入基础配置 base.yaml..."
 cat > "${VAR_DIR}/base.yaml" << EOF
-# MiProxy 基础配置
+# MiProxy 基础配置（系统管理，请勿手动修改）
+# 订阅相关字段（proxies/proxy-groups/rules/proxy-providers）请在订阅文件中配置
+
 mixed-port: ${HTTP_PORT}
 allow-lan: true
 mode: rule
 log-level: info
 ipv6: false
 
+# 控制面板
 external-controller: 0.0.0.0:${API_PORT}
-external-ui: ${PANEL_PATH}
+external-ui: ${UI_TARGET}
 external-ui-name: ${DASHBOARD_NAME}
 secret: ""
 
+# 跨域允许
 external-controller-cors:
   allow-private-network: true
   allow-origins:
     - "*"
+
+# TUN 默认关闭
+tun:
+  enable: false
+
+# GEO 数据库模式（避免 miproxy 启动时联网下载）
+geodata-mode: true
 EOF
 fi
 
-log_msg "========== MiProxy 安装完成 =========="
+# 复制离线 GEO 数据库（避免 miproxy 启动时联网下载）
+if [ -d "${APP_DEST}/data" ]; then
+    log_msg "复制离线 GEO 数据库..."
+    cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"
+    cp -f "${APP_DEST}/data/geosite.dat" "${VAR_DIR}/geosite.dat"
+    cp -f "${APP_DEST}/data/Country.mmdb" "${VAR_DIR}/Country.mmdb"
+    chmod 666 "${VAR_DIR}/geoip.dat" "${VAR_DIR}/geosite.dat" "${VAR_DIR}/Country.mmdb"
+    log_msg "离线 GEO 数据库已就绪"
+fi
+
+# 写入 subscription.yaml
+log_msg "处理订阅 (类型: ${SUB_TYPE})..."
+SUB_FILE="${VAR_DIR}/subscription.yaml"
+
+if [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ -z "${SUB_URL}" ] && [ -z "${SUB_PATH}" ]; then
+    log_msg "复用现有 subscription.yaml"
+elif [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ "${SUB_TYPE}" = "none" ]; then
+    log_msg "复用现有 subscription.yaml（向导未指定订阅）"
+else
+    case "${SUB_TYPE}" in
+    remote)
+        if [ -n "${SUB_URL}" ]; then
+            log_msg "下载远程订阅: ${SUB_URL}"
+            if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}"; then
+                log_msg "远程订阅下载成功"
+            else
+                log_msg "警告: 远程订阅下载失败，使用空订阅占位"
+                cat > "${SUB_FILE}" << 'EMPTYEOF'
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+            fi
+        else
+            log_msg "远程订阅 URL 为空，使用空订阅占位"
+            cat > "${SUB_FILE}" << 'EMPTYEOF'
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+        fi
+        ;;
+    local)
+        if [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
+            log_msg "复制本地订阅: ${SUB_PATH}"
+            cp -f "${SUB_PATH}" "${SUB_FILE}"
+        else
+            log_msg "警告: 本地订阅文件不存在，使用空订阅占位"
+            cat > "${SUB_FILE}" << 'EMPTYEOF'
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+        fi
+        ;;
+    *)
+        log_msg "不使用订阅，使用占位"
+        cat > "${SUB_FILE}" << 'EMPTYEOF'
+# 未配置订阅
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+        ;;
+esac
+fi
+
+chmod 666 "${SUB_FILE}"
+
+# 拼接主配置 = base.yaml + subscription.yaml
+log_msg "生成主配置 config.yaml..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
+chmod 666 "${VAR_DIR}/config.yaml"
+log_msg "主配置已生成"
+
+# 写入 settings.conf
+mkdir -p "${TRIM_PKGETC}"
+cat > "${TRIM_PKGETC}/settings.conf" << EOF
+wizard_dashboard=${DASHBOARD}
+wizard_http_port=${HTTP_PORT}
+wizard_api_port=${API_PORT}
+wizard_sub_type=${SUB_TYPE}
+wizard_sub_url=${SUB_URL}
+wizard_sub_path=${SUB_PATH}
+wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}
+EOF
+
+# 写入刷新守护进程配置（让后台守护进程能读到订阅来源和间隔）
+log_msg "写入订阅刷新守护进程配置..."
+cat > "${VAR_DIR}/refresh_subscription.conf" << EOF
+SUBSCRIPTION_TYPE=${SUB_TYPE}
+SUBSCRIPTION_URL=${SUB_URL}
+SUBSCRIPTION_PATH=${SUB_PATH}
+REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}
+EOF
+chmod 666 "${VAR_DIR}/refresh_subscription.conf"
+log_msg "守护进程配置已写入 (interval=${REFRESH_INTERVAL_SEC}s)"
+
+log_msg "安装完成!"
 exit 0
+

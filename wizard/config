@@ -1,0 +1,62 @@
+[
+  {
+    "stepTitle": "控制面板",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "切换面板后会替换控制面板文件并重启 mihomo，订阅配置保持不变。"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_dashboard",
+        "label": "选择控制面板",
+        "defaultValue": "zashboard",
+        "options": [
+          { "value": "zashboard", "label": "Zashboard（推荐）— 现代化界面，功能丰富，支持深色模式" },
+          { "value": "metacubexd", "label": "MetaCubeXD — 经典 Clash 风格界面，轻量稳定" }
+        ]
+      }
+    ]
+  },
+  {
+    "stepTitle": "订阅管理",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "在此修改订阅地址后点击保存，mihomo 会自动重新拉取并重启。订阅文件应为 YAML 格式，包含 proxies / proxy-groups / rules 等字段。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_sub_url",
+        "label": "远程订阅 URL",
+        "initValue": "",
+        "rules": [
+          { "pattern": "^https?://.*|^$", "message": "请输入正确的 URL 格式（http/https），留空表示不使用远程订阅" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_sub_path",
+        "label": "本地订阅文件路径",
+        "initValue": "",
+        "rules": [
+          { "min": 0, "message": "请输入文件路径" }
+        ]
+      },
+      {
+        "type": "radio",
+        "field": "wizard_refresh_interval",
+        "label": "自动刷新订阅",
+        "defaultValue": "6",
+        "options": [
+          { "value": "0",  "label": "禁用 — 仅手动刷新" },
+          { "value": "1",  "label": "每 1 小时" },
+          { "value": "6",  "label": "每 6 小时" },
+          { "value": "12", "label": "每 12 小时" },
+          { "value": "24", "label": "每 24 小时" }
+        ],
+        "rules": [{ "required": true, "message": "请选择刷新间隔" }]
+      }
+    ]
+  }
+]

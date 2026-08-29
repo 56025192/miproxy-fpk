@@ -1,0 +1,225 @@
+#!/bin/bash
+
+# MiHomo 安装后回调脚本
+# 拆分基础配置和订阅，订阅可随时通过设置面板更新
+
+set -e
+
+# 目录（TRIM_PKGVAR 是 var 目录本身，TRIM_APPDEST 是 app 目录）
+APP_DEST="${TRIM_APPDEST}"
+TARGET_DIR="${TRIM_PKGVAR}/target"
+VAR_DIR="${TRIM_PKGVAR}"
+UI_TARGET="${VAR_DIR}/ui"
+
+# 向导变量
+DASHBOARD="${wizard_dashboard:-zashboard}"
+HTTP_PORT="${wizard_http_port:-7890}"
+API_PORT="${wizard_api_port:-9090}"
+SUB_TYPE="${wizard_sub_type:-none}"
+SUB_URL="${wizard_sub_url:-}"
+SUB_PATH="${wizard_sub_path:-}"
+REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
+# 把小时转成秒
+if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
+    REFRESH_INTERVAL_SEC=0
+else
+    REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
+fi
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+# 创建必要目录
+mkdir -p "${TARGET_DIR}"
+mkdir -p "${VAR_DIR}"
+mkdir -p "${UI_TARGET}"
+
+# 检测是否有上次保留的数据
+PRESERVED_FLAG="${VAR_DIR}/.preserved"
+if [ -f "${PRESERVED_FLAG}" ]; then
+    log_msg "检测到上次保留的数据"
+    PRESERVED=1
+    rm -f "${PRESERVED_FLAG}"
+else
+    PRESERVED=0
+fi
+
+# 复制 mihomo 核心
+log_msg "复制 mihomo 核心..."
+cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
+chmod +x "${TARGET_DIR}/mihomo"
+log_msg "mihomo 核心复制完成"
+
+# 复制控制面板
+log_msg "复制控制面板: ${DASHBOARD}"
+# mihomo 通过 external-ui + external-ui-name 组合定位面板
+# 所以面板文件必须放到 ${UI_TARGET}/${DASHBOARD}/ 子目录下
+if [ "${DASHBOARD}" = "zashboard" ]; then
+    mkdir -p "${UI_TARGET}/zashboard"
+    cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/"
+    DASHBOARD_NAME="zashboard"
+else
+    mkdir -p "${UI_TARGET}/metacubexd"
+    cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/"
+    DASHBOARD_NAME="metacubexd"
+fi
+log_msg "控制面板复制完成: ${DASHBOARD_NAME} (路径: ${UI_TARGET}/${DASHBOARD_NAME})"
+
+# 写入 base.yaml
+if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
+    log_msg "复用现有 base.yaml"
+else
+    log_msg "写入基础配置 base.yaml..."
+cat > "${VAR_DIR}/base.yaml" << EOF
+# MiHomo 基础配置（系统管理，请勿手动修改）
+# 订阅相关字段（proxies/proxy-groups/rules/proxy-providers）请在订阅文件中配置
+
+mixed-port: ${HTTP_PORT}
+allow-lan: true
+mode: rule
+log-level: info
+ipv6: false
+
+# 控制面板
+external-controller: 0.0.0.0:${API_PORT}
+external-ui: ${UI_TARGET}
+external-ui-name: ${DASHBOARD_NAME}
+secret: ""
+
+# 跨域允许
+external-controller-cors:
+  allow-private-network: true
+  allow-origins:
+    - "*"
+
+# TUN 默认关闭
+tun:
+  enable: false
+
+# GEO 数据库模式（避免 mihomo 启动时联网下载）
+geodata-mode: true
+EOF
+fi
+
+# 复制离线 GEO 数据库（避免 mihomo 启动时联网下载）
+if [ -d "${APP_DEST}/data" ]; then
+    log_msg "复制离线 GEO 数据库..."
+    cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"
+    cp -f "${APP_DEST}/data/geosite.dat" "${VAR_DIR}/geosite.dat"
+    cp -f "${APP_DEST}/data/Country.mmdb" "${VAR_DIR}/Country.mmdb"
+    chmod 666 "${VAR_DIR}/geoip.dat" "${VAR_DIR}/geosite.dat" "${VAR_DIR}/Country.mmdb"
+    log_msg "离线 GEO 数据库已就绪"
+fi
+
+# 写入 subscription.yaml
+log_msg "处理订阅 (类型: ${SUB_TYPE})..."
+SUB_FILE="${VAR_DIR}/subscription.yaml"
+
+if [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ -z "${SUB_URL}" ] && [ -z "${SUB_PATH}" ]; then
+    log_msg "复用现有 subscription.yaml"
+elif [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ "${SUB_TYPE}" = "none" ]; then
+    log_msg "复用现有 subscription.yaml（向导未指定订阅）"
+else
+    case "${SUB_TYPE}" in
+    remote)
+        if [ -n "${SUB_URL}" ]; then
+            log_msg "下载远程订阅: ${SUB_URL}"
+            if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}"; then
+                log_msg "远程订阅下载成功"
+            else
+                log_msg "警告: 远程订阅下载失败，使用空订阅占位"
+                cat > "${SUB_FILE}" << 'EMPTYEOF'
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+            fi
+        else
+            log_msg "远程订阅 URL 为空，使用空订阅占位"
+            cat > "${SUB_FILE}" << 'EMPTYEOF'
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+        fi
+        ;;
+    local)
+        if [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
+            log_msg "复制本地订阅: ${SUB_PATH}"
+            cp -f "${SUB_PATH}" "${SUB_FILE}"
+        else
+            log_msg "警告: 本地订阅文件不存在，使用空订阅占位"
+            cat > "${SUB_FILE}" << 'EMPTYEOF'
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+        fi
+        ;;
+    *)
+        log_msg "不使用订阅，使用占位"
+        cat > "${SUB_FILE}" << 'EMPTYEOF'
+# 未配置订阅
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+        ;;
+esac
+fi
+
+chmod 666 "${SUB_FILE}"
+
+# 拼接主配置 = base.yaml + subscription.yaml
+log_msg "生成主配置 config.yaml..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
+chmod 666 "${VAR_DIR}/config.yaml"
+log_msg "主配置已生成"
+
+# 写入 settings.conf
+mkdir -p "${TRIM_PKGETC}"
+cat > "${TRIM_PKGETC}/settings.conf" << EOF
+wizard_dashboard=${DASHBOARD}
+wizard_http_port=${HTTP_PORT}
+wizard_api_port=${API_PORT}
+wizard_sub_type=${SUB_TYPE}
+wizard_sub_url=${SUB_URL}
+wizard_sub_path=${SUB_PATH}
+wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}
+EOF
+
+# 写入刷新守护进程配置（让后台守护进程能读到订阅来源和间隔）
+log_msg "写入订阅刷新守护进程配置..."
+cat > "${VAR_DIR}/refresh_subscription.conf" << EOF
+SUBSCRIPTION_TYPE=${SUB_TYPE}
+SUBSCRIPTION_URL=${SUB_URL}
+SUBSCRIPTION_PATH=${SUB_PATH}
+REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}
+EOF
+chmod 666 "${VAR_DIR}/refresh_subscription.conf"
+log_msg "守护进程配置已写入 (interval=${REFRESH_INTERVAL_SEC}s)"
+
+log_msg "安装完成!"
+exit 0

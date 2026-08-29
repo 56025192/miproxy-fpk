@@ -1,0 +1,91 @@
+[
+  {
+    "stepTitle": "欢迎安装 MiHomo",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "MiHomo (Clash.Meta) 是支持全协议的高级代理核心。本应用已集成 mihomo 核心和两种 Web 控制面板，安装即可使用，无需下载。"
+      }
+    ]
+  },
+  {
+    "stepTitle": "选择控制面板",
+    "items": [
+      {
+        "type": "radio",
+        "field": "wizard_dashboard",
+        "label": "控制面板",
+        "initValue": "zashboard",
+        "options": [
+          { "label": "Zashboard v3.24.0 (推荐，界面美观功能丰富)", "value": "zashboard" },
+          { "label": "MetaCubeXD v1.273.0 (轻量级，兼容性好)", "value": "metacubexd" }
+        ],
+        "rules": [
+          { "required": true, "message": "请选择控制面板" }
+        ]
+      }
+    ]
+  },
+  {
+    "stepTitle": "网络设置",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_http_port",
+        "label": "HTTP/SOCKS5 代理端口",
+        "initValue": "7890",
+        "rules": [
+          { "required": true, "message": "请输入代理端口" },
+          { "pattern": "^[0-9]+$", "message": "端口号必须是数字" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_api_port",
+        "label": "控制面板/API 端口",
+        "initValue": "9090",
+        "rules": [
+          { "required": true, "message": "请输入API端口" },
+          { "pattern": "^[0-9]+$", "message": "端口号必须是数字" }
+        ]
+      }
+    ]
+  },
+  {
+    "stepTitle": "订阅设置",
+    "items": [
+      {
+        "type": "radio",
+        "field": "wizard_sub_type",
+        "label": "订阅方式",
+        "initValue": "none",
+        "options": [
+          { "label": "不使用订阅（之后手动配置节点）", "value": "none" },
+          { "label": "远程订阅（输入订阅 URL）", "value": "remote" },
+          { "label": "本地订阅（指定文件路径）", "value": "local" }
+        ],
+        "rules": [
+          { "required": true, "message": "请选择订阅方式" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_sub_url",
+        "label": "远程订阅 URL（仅当选择远程订阅时填）",
+        "initValue": "",
+        "rules": [
+          { "pattern": "^https?://.+", "message": "请输入正确的 URL 格式" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_sub_path",
+        "label": "本地订阅文件路径（仅当选择本地订阅时填）",
+        "initValue": "/vol1/@appshare/mihomo/sub.yaml",
+        "rules": [
+          { "min": 1, "message": "请输入文件路径" }
+        ]
+      }
+    ]
+  }
+]

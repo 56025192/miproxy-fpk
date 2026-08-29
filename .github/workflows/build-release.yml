@@ -73,10 +73,14 @@ jobs:
           
           echo "打包退出码: $BUILD_EXIT"
           
+          # 重命名为带版本号的文件名
+          VERSION="${{ needs.analyze.outputs.version }}"
           FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then
-            echo "✅ FPK 打包成功: $FPK"
-            echo "fpk_file=$FPK" >> $GITHUB_OUTPUT
+            NEW_FPK="miproxy-${VERSION}.fpk"
+            mv "$FPK" "$NEW_FPK"
+            echo "✅ FPK 打包成功: $NEW_FPK"
+            echo "fpk_file=$NEW_FPK" >> $GITHUB_OUTPUT
           else
             echo "❌ FPK 打包失败"
             ls -la

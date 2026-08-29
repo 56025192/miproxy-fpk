@@ -1,0 +1,216 @@
+name: Sync Binaries
+
+on:
+  # 每天凌晨 2:00 自动执行
+  schedule:
+    - cron: '0 2 * * *'
+  # 也支持手动触发
+  workflow_dispatch:
+    inputs:
+      skip_mihomo:
+        description: '跳过 mihomo'
+        required: false
+        default: 'false'
+      skip_geo:
+        description: '跳过 GEO 数据库'
+        required: false
+        default: 'false'
+      skip_ui:
+        description: '跳过控制面板'
+        required: false
+        default: 'false'
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up environment
+        id: env
+        run: |
+          echo "SKIP_MIHOMO=${{ inputs.skip_mihomo || 'false' }}" >> $GITHUB_ENV
+          echo "SKIP_GEO=${{ inputs.skip_geo || 'false' }}" >> $GITHUB_ENV
+          echo "SKIP_UI=${{ inputs.skip_ui || 'false' }}" >> $GITHUB_ENV
+          echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+          echo "TODAY=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      # ==================== mihomo ====================
+      - name: Download mihomo
+        if: env.SKIP_MIHOMO != 'true'
+        id: mihomo
+        run: |
+          echo "📥 下载 mihomo..."
+          
+          # 获取最新 release
+          MIHOMO_VERSION=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/')
+          echo "mihomo_version=${MIHOMO_VERSION}" >> $GITHUB_ENV
+          echo "📦 mihomo 版本: ${MIHOMO_VERSION}"
+          
+          # 下载 Linux amd64 版本
+          curl -sL "https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/mihomo-linux-amd64-v${MIHOMO_VERSION}.gz" | gunzip > mihomo-tmp
+          
+          # 检测文件是否有效
+          if file mihomo-tmp | grep -q "ELF"; then
+            chmod +x mihomo-tmp
+            mv mihomo-tmp app/server/mihomo
+            echo "✅ mihomo 下载成功"
+          else
+            echo "❌ mihomo 下载失败"
+            exit 1
+          fi
+
+      # ==================== GEO 数据库 ====================
+      - name: Download GEO databases
+        if: env.SKIP_GEO != 'true'
+        id: geo
+        run: |
+          echo "📥 下载 GEO 数据库..."
+          
+          mkdir -p geo-temp
+          
+          # geoip.dat
+          echo "  - geoip.dat"
+          curl -sL "https://github.com/MetaCubeX/mihomo-ruleset/releases/latest/download/geoip.dat" -o geo-temp/geoip.dat
+          
+          # geosite.dat
+          echo "  - geosite.dat"  
+          curl -sL "https://github.com/MetaCubeX/mihomo-ruleset/releases/latest/download/geosite.dat" -o geo-temp/geosite.dat
+          
+          # Country.mmdb
+          echo "  - Country.mmdb"
+          curl -sL "https://github.com/MetaCubeX/mihomo-ruleset/releases/latest/download/Country.mmdb" -o geo-temp/Country.mmdb
+          
+          # 验证文件
+          for f in geoip.dat geosite.dat Country.mmdb; do
+            if [ -s "geo-temp/$f" ]; then
+              mv "geo-temp/$f" "app/data/$f"
+              SIZE=$(du -h "app/data/$f" | cut -f1)
+              echo "  ✅ $f ($SIZE)"
+            else
+              echo "  ❌ $f 下载失败"
+              exit 1
+            fi
+          done
+          
+          rm -rf geo-temp
+
+      # ==================== Zashboard 面板 ====================
+      - name: Download Zashboard
+        if: env.SKIP_UI != 'true'
+        id: zashboard
+        run: |
+          echo "📥 下载 Zashboard 面板..."
+          
+          # 获取最新 release
+          ZASHBOARD_VERSION=$(curl -s https://api.github.com/repos/Zephyruso/zashboard/releases/latest | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/')
+          echo "zashboard_version=${ZASHBOARD_VERSION}" >> $GITHUB_ENV
+          echo "📦 Zashboard 版本: ${ZASHBOARD_VERSION}"
+          
+          # 下载
+          curl -sL "https://github.com/Zephyruso/zashboard/releases/latest/download/zashboard.zip" -o zashboard.zip
+          
+          if [ -s zashboard.zip ]; then
+            rm -rf app/ui/zashboard
+            unzip -q zashboard.zip -d app/ui/zashboard-tmp
+            mv app/ui/zashboard-tmp/* app/ui/zashboard/
+            rm -rf app/ui/zashboard-tmp zashboard.zip
+            echo "✅ Zashboard 下载成功"
+          else
+            echo "❌ Zashboard 下载失败"
+            exit 1
+          fi
+
+      # ==================== MetaCubeXD 面板 ====================
+      - name: Download MetaCubeXD
+        if: env.SKIP_UI != 'true'
+        id: metacubexd
+        run: |
+          echo "📥 下载 MetaCubeXD 面板..."
+          
+          # 获取最新 release
+          METAXD_VERSION=$(curl -s https://api.github.com/repos/MetaCubeX/metacubexd/releases/latest | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/')
+          echo "metacubexd_version=${METAXD_VERSION}" >> $GITHUB_ENV
+          echo "📦 MetaCubeXD 版本: ${METAXD_VERSION}"
+          
+          # 下载
+          curl -sL "https://github.com/MetaCubeX/metacubexd/releases/latest/download/metacubexd.zip" -o metacubexd.zip
+          
+          if [ -s metacubexd.zip ]; then
+            rm -rf app/ui/metacubexd
+            unzip -q metacubexd.zip -d app/ui/metacubexd-tmp
+            mv app/ui/metacubexd-tmp/* app/ui/metacubexd/
+            rm -rf app/ui/metacubexd-tmp metacubexd.zip
+            echo "✅ MetaCubeXD 下载成功"
+          else
+            echo "❌ MetaCubeXD 下载失败"
+            exit 1
+          fi
+
+      # ==================== 提交更改 ====================
+      - name: Commit and push
+        run: |
+          echo "📝 检查更改..."
+          
+          # 配置 git
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # 添加所有更改
+          git add -A
+          
+          # 检查是否有更改
+          if git diff --staged --quiet; then
+            echo "✅ 没有需要更新的内容"
+          else
+            # 显示更改
+            git diff --staged --stat
+            
+            # 构建提交信息
+            CHANGES=""
+            [ -n "${{ env.MIHOMO_VERSION }}" ] && CHANGES="${CHANGES} - mihomo: ${{ env.MIHOMO_VERSION }}"
+            [ -n "${{ env.ZASHBOARD_VERSION }}" ] && CHANGES="${CHANGES} - Zashboard: ${{ env.ZASHBOARD_VERSION }}"
+            [ -n "${{ env.METAXD_VERSION }}" ] && CHANGES="${CHANGES} - MetaCubeXD: ${{ env.METAXD_VERSION }}"
+            
+            COMMIT_MSG="🔄 自动同步: $(echo $CHANGES | sed 's/^//')
+            
+            - 日期: ${{ env.TODAY }}
+            - 触发: ${{ github.event_name }}
+            
+            ${{ env.SKIP_MIHOMO == 'true' && '> mihomo: 跳过' || '' }}
+            ${{ env.SKIP_GEO == 'true' && '> GEO: 跳过' || '' }}
+            ${{ env.SKIP_UI == 'true' && '> UI: 跳过' || '' }}"
+            
+            # 提交
+            git commit -m "${COMMIT_MSG}"
+            
+            # 推送
+            echo "🚀 推送到 GitHub..."
+            git push origin main
+            echo "✅ 更新完成!"
+          fi
+
+      - name: Create release tag
+        if: github.event_name == 'schedule'
+        run: |
+          echo "🏷️ 创建 release tag..."
+          
+          TAG="auto-$(date +'%Y%m%d')"
+          
+          # 检查 tag 是否存在
+          if git tag -l | grep -q "^${TAG}$"; then
+            echo "Tag ${TAG} 已存在，跳过"
+          else
+            git tag -a "${TAG}" -m "自动更新 ${TAG}"
+            git push origin "${TAG}"
+            echo "✅ Tag ${TAG} 已创建并推送"
+          fi

@@ -149,13 +149,14 @@ jobs:
           echo "metacubexd_version=${METAXD_VERSION}" >> $GITHUB_ENV
           echo "📦 MetaCubeXD 版本: ${METAXD_VERSION}"
           
-          curl -sL "https://github.com/MetaCubeX/metacubexd/releases/download/v${METAXD_VERSION}/metacubexd-linux-amd64.zip" -o metacubexd.zip
+          # 下载前端资源
+          curl -sL "https://github.com/MetaCubeX/metacubexd/releases/download/v${METAXD_VERSION}/compressed-dist.tgz" -o metacubexd.tar.gz
           
-          if [ -s metacubexd.zip ]; then
+          if [ -s metacubexd.tar.gz ]; then
             rm -rf app/ui/metacubexd
-            unzip -q metacubexd.zip -d metacubexd-tmp
-            mv metacubexd-tmp app/ui/metacubexd
-            rm -rf metacubexd-tmp metacubexd.zip
+            mkdir -p app/ui/metacubexd
+            tar -xzf metacubexd.tar.gz -C app/ui/metacubexd/
+            rm -f metacubexd.tar.gz
             echo "✅ MetaCubeXD 下载成功"
           else
             echo "❌ MetaCubeXD 下载失败"

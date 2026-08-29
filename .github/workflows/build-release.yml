@@ -176,7 +176,7 @@ jobs:
             ---
             *由 GitHub Actions 自动创建*
           files: |
-            "*.fpk"
+            *.fpk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

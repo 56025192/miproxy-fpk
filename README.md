@@ -4,29 +4,48 @@
 
 ## 功能特性
 
-- 🌐 **支持主流代理协议**：Shadowsocks (SIP002)、ShadowsocksR、Snell、V2Ray (VMess/VLESS)、Trojan、Tuic、Hysteria2 等
+- 🌐 **支持主流代理协议**：Shadowsocks、VMess、Trojan、Shadowsocks 等
 - 🎨 **双控制面板**：Zashboard（推荐）和 MetaCubeXD
 - 📦 **订阅管理**：支持远程订阅 URL 和本地订阅文件
-- 🔄 **自动刷新**：可配置自动刷新订阅间隔（1/6/12/24 小时）
+- 🔄 **自动刷新**：可配置自动刷新订阅间隔
 - 🌐 **局域网共享**：允许局域网设备通过本机代理端口上网
-- 🔒 **安全配置**：支持 API 密钥认证
-- 📊 **灵活模式**：规则模式 / 全局模式 / 直连模式
 - 🗃️ **离线 GEO**：内置 GEO 数据库，无需联网下载
 
 ## 安装
 
-1. 在 fnOS 应用中心下载 FPK 文件
-2. 安装时配置控制面板和订阅
+### 方式一：直接下载 FPK（推荐）
+
+在 [Releases](https://github.com/56025192/mihomo-fpk/releases) 页面下载 `mihomo-v2.0.3.fpk`，在 fnOS 应用中心上传安装。
+
+### 方式二：从源码构建
+
+1. 克隆仓库
+```bash
+git clone https://github.com/56025192/mihomo-fpk.git
+cd mihomo-fpk
+```
+
+2. 下载 mihomo 二进制
+```bash
+curl -L -o app/server/mihomo https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-v1.19.30.gz
+gunzip app/server/mihomo
+chmod +x app/server/mihomo
+```
+
+3. 打包 FPK
+```bash
+fnpack build .
+```
 
 ## 配置文件位置
 
-- `/vol1/@appdata/mihomo/config.yaml` - mihomo 主配置
+- `/vol1/@appdata/mihomo/config.yaml` - 主配置
 - `/vol1/@appdata/mihomo/subscription.yaml` - 订阅配置
 - `/vol1/@appdata/mihomo/info.log` - 运行日志
 
 ## 版本历史
 
-- **v2.0.3** - 稳定版本，控制面板切换、订阅管理、自动刷新
+- **v2.0.3** - 稳定版本
 
 ## 免责声明
 

@@ -81,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: miproxy-fpk
-          path: *.fpk
+          path: "*.fpk"
           retention-days: 7
 
   # ========== 创建 Release ==========

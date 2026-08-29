@@ -5,43 +5,42 @@
 
 set -e
 
-# 目录（TRIM_PKGVAR 是 var 目录本身，TRIM_APPDEST 是 app 目录）
-APP_DEST="${TRIM_APPDEST}"
-TARGET_DIR="${TRIM_PKGVAR}/target"
-VAR_DIR="${TRIM_PKGVAR}"
-UI_TARGET="${VAR_DIR}/ui"
+# 目录
+APP_DEST="${TRIM_APPDEST}"     # /var/apps/miproxy
+TARGET_DIR="${TRIM_PKGVAR}/target"  # /var/appsdata/miproxy/target
+VAR_DIR="${TRIM_PKGVAR}"       # /var/appsdata/miproxy
+UI_DIR="${VAR_DIR}/ui"          # /var/appsdata/miproxy/ui
 
 log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
-log_msg "========== 开始安装 =========="
+log_msg "========== MiProxy 安装开始 =========="
 log_msg "APP_DEST: ${APP_DEST}"
 log_msg "TARGET_DIR: ${TARGET_DIR}"
 log_msg "VAR_DIR: ${VAR_DIR}"
-log_msg "UI_TARGET: ${UI_TARGET}"
+log_msg "UI_DIR: ${UI_DIR}"
 
-# 查看 APP_DEST 目录内容
-log_msg "APP_DEST 目录内容:"
-ls -la "${APP_DEST}/" 2>&1 || log_msg "APP_DEST 目录不存在"
+# 创建必要目录
+mkdir -p "${TARGET_DIR}"
+mkdir -p "${VAR_DIR}"
+mkdir -p "${UI_DIR}"
 
-# 解压 app.tgz（fnpack 打包时会把 app/ 目录压缩成 app.tgz）
+# ==================== 解压 app.tgz ====================
 if [ -f "${APP_DEST}/app.tgz" ]; then
-    log_msg "发现 app.tgz，开始解压..."
+    log_msg "解压 app.tgz..."
     tar -xzf "${APP_DEST}/app.tgz" -C "${APP_DEST}/"
     rm -f "${APP_DEST}/app.tgz"
     log_msg "app.tgz 解压完成"
-    log_msg "解压后 APP_DEST 内容:"
-    ls -la "${APP_DEST}/" 2>&1
 else
-    log_msg "未发现 app.tgz"
+    log_msg "app.tgz 不存在，跳过解压"
 fi
 
-# 查看 ui 目录
-log_msg "检查 ui 目录:"
-ls -la "${APP_DEST}/ui/" 2>&1 || log_msg "ui 目录不存在"
+# 查看 APP_DEST 目录
+log_msg "APP_DEST 目录内容:"
+ls -la "${APP_DEST}/" 2>&1 || true
 
-# 向导变量
+# ==================== 向导变量 ====================
 DASHBOARD="${wizard_dashboard:-zashboard}"
 HTTP_PORT="${wizard_http_port:-7890}"
 API_PORT="${wizard_api_port:-9090}"
@@ -49,19 +48,14 @@ SUB_TYPE="${wizard_sub_type:-none}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
-# 把小时转成秒
+
 if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
     REFRESH_INTERVAL_SEC=0
 else
     REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
 fi
 
-# 创建必要目录
-mkdir -p "${TARGET_DIR}"
-mkdir -p "${VAR_DIR}"
-mkdir -p "${UI_TARGET}"
-
-# 检测是否有上次保留的数据
+# ==================== 检测保留数据 ====================
 PRESERVED_FLAG="${VAR_DIR}/.preserved"
 if [ -f "${PRESERVED_FLAG}" ]; then
     log_msg "检测到上次保留的数据"
@@ -71,7 +65,7 @@ else
     PRESERVED=0
 fi
 
-# 复制 miproxy 核心
+# ==================== 复制 mihomo 核心 ====================
 log_msg "复制 mihomo 核心..."
 if [ -f "${APP_DEST}/server/mihomo" ]; then
     cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
@@ -82,72 +76,79 @@ else
     ls -la "${APP_DEST}/server/" 2>&1 || true
 fi
 
-# 复制控制面板
+# ==================== 复制控制面板 ====================
 log_msg "复制控制面板: ${DASHBOARD}"
-# miproxy 通过 external-ui + external-ui-name 组合定位面板
-# 所以面板文件必须放到 ${UI_TARGET}/${DASHBOARD}/ 子目录下
+
 if [ "${DASHBOARD}" = "zashboard" ]; then
-    mkdir -p "${UI_TARGET}/zashboard"
-    log_msg "源目录: ${APP_DEST}/ui/zashboard/"
-    log_msg "目标目录: ${UI_TARGET}/zashboard/"
+    mkdir -p "${UI_DIR}/zashboard"
     
     # 复制所有文件
-    cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/"
+    cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_DIR}/zashboard/" 2>/dev/null || true
     
-    # zashboard 的 index.html 在 dist 子目录下，需要提出来
-    if [ -d "${APP_DEST}/ui/zashboard/dist" ]; then
-        log_msg "复制 dist 目录..."
-        cp -rf "${APP_DEST}/ui/zashboard/dist/"* "${UI_TARGET}/zashboard/"
-    fi
-    
-    # 解压 zashboard.zip
+    # 解压 zashboard.zip（如果存在）
     if [ -f "${APP_DEST}/ui/zashboard.zip" ]; then
         log_msg "解压 zashboard.zip..."
-        unzip -q "${APP_DEST}/ui/zashboard.zip" -d "${UI_TARGET}/zashboard-tmp"
-        mv "${UI_TARGET}/zashboard-tmp/"* "${UI_TARGET}/zashboard/"
-        rm -rf "${UI_TARGET}/zashboard-tmp"
+        unzip -q -o "${APP_DEST}/ui/zashboard.zip" -d "${UI_DIR}/zashboard-tmp"
+        mv "${UI_DIR}/zashboard-tmp/"* "${UI_DIR}/zashboard/" 2>/dev/null || true
+        rm -rf "${UI_DIR}/zashboard-tmp"
     fi
+    
+    # 如果有 dist 子目录，把内容提出来
+    if [ -d "${APP_DEST}/ui/zashboard/dist" ]; then
+        log_msg "复制 dist 目录内容..."
+        cp -rf "${APP_DEST}/ui/zashboard/dist/"* "${UI_DIR}/zashboard/" 2>/dev/null || true
+    fi
+    
+    # 最终检查
+    log_msg "zashboard 目录内容:"
+    ls -la "${UI_DIR}/zashboard/" 2>&1 || true
     
     DASHBOARD_NAME="zashboard"
 else
-    mkdir -p "${UI_TARGET}/metacubexd"
-    cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/"
+    mkdir -p "${UI_DIR}/metacubexd"
+    cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_DIR}/metacubexd/" 2>/dev/null || true
+    
+    # 解压 metacubexd.tar.gz（如果存在）
+    if [ -f "${APP_DEST}/ui/metacubexd.tar.gz" ]; then
+        log_msg "解压 metacubexd.tar.gz..."
+        tar -xzf "${APP_DEST}/ui/metacubexd.tar.gz" -C "${UI_DIR}/metacubexd-tmp"
+        mv "${UI_DIR}/metacubexd-tmp/"* "${UI_DIR}/metacubexd/" 2>/dev/null || true
+        rm -rf "${UI_DIR}/metacubexd-tmp"
+    fi
+    
     DASHBOARD_NAME="metacubexd"
 fi
-log_msg "控制面板复制完成: ${DASHBOARD_NAME} (路径: ${UI_TARGET}/${DASHBOARD_NAME})"
+log_msg "控制面板复制完成: ${DASHBOARD_NAME}"
 
-# 复制桌面入口配置和图标
+# ==================== 复制桌面配置和图标 ====================
 log_msg "复制桌面入口配置和图标..."
-mkdir -p "${UI_TARGET}/images"
-if [ -f "${APP_DEST}/ui/config" ]; then
-    cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
-fi
-cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
-chmod 666 "${UI_TARGET}/config" 2>/dev/null || true
-log_msg "桌面入口配置和图标复制完成"
+mkdir -p "${UI_DIR}/images"
 
-# 写入 base.yaml
+if [ -f "${APP_DEST}/ui/config" ]; then
+    cp -f "${APP_DEST}/ui/config" "${UI_DIR}/config"
+    chmod 666 "${UI_DIR}/config"
+fi
+
+cp -f "${APP_DEST}/ui/images/"* "${UI_DIR}/images/" 2>/dev/null || true
+
+# ==================== 写入 base.yaml ====================
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
     log_msg "复用现有 base.yaml"
 else
     log_msg "写入基础配置 base.yaml..."
 cat > "${VAR_DIR}/base.yaml" << EOF
-# MiProxy 基础配置（系统管理，请勿手动修改）
-# 订阅相关字段（proxies/proxy-groups/rules/proxy-providers）请在订阅文件中配置
-
+# MiProxy 基础配置
 mixed-port: ${HTTP_PORT}
 allow-lan: true
 mode: rule
 log-level: info
 ipv6: false
 
-# 控制面板
 external-controller: 0.0.0.0:${API_PORT}
-external-ui: ${UI_TARGET}
+external-ui: ${UI_DIR}
 external-ui-name: ${DASHBOARD_NAME}
 secret: ""
 
-# 跨域允许
 external-controller-cors:
   allow-private-network: true
   allow-origins:
@@ -155,4 +156,5 @@ external-controller-cors:
 EOF
 fi
 
-log_msg "========== 安装完成 =========="
+log_msg "========== MiProxy 安装完成 =========="
+exit 0

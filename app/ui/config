@@ -1,11 +1,11 @@
 {
   ".url": {
-    "mihomo.dashboard": {
-      "title": "MiHomo 控制面板",
-      "icon": "images/icon_{0}.png",
+    "miproxy.dashboard": {
+      "title": "MiProxy 控制面板",
+      "icon": "ICON.png",
       "type": "url",
       "protocol": "http",
-      "url": "/ui/",
+      "url": "/ui/zashboard/",
       "port": "9090",
       "allUsers": true
     }

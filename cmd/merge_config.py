@@ -63,23 +63,30 @@ def merge_configs(base_file, sub_file, output_file):
     with open(base_file, 'r', encoding='utf-8') as f:
         base = yaml.safe_load(f) or {}
 
-    log.info(f"读取订阅配置: {sub_file}")
-    with open(sub_file, 'r', encoding='utf-8') as f:
-        sub = yaml.safe_load(f) or {}
-
-    if not isinstance(base, dict):
-        raise ValueError(f"base.yaml 格式错误：期望 dict，实际 {type(base)}")
-    if not isinstance(sub, dict):
-        raise ValueError(f"subscription.yaml 格式错误：期望 dict，实际 {type(sub)}")
-
     log.info(f"基础配置字段数: {len(base)}")
 
-    # 白名单过滤：只保留订阅相关字段
-    sub_cleaned, sub_removed = clean_sub(sub, ALLOWED_SUB_FIELDS)
-    if sub_removed:
-        log.info(f"从订阅中剔除 {len(sub_removed)} 个非白名单字段（保护系统配置）:")
-        for k in sub_removed:
-            log.info(f"  - {k}")
+    # 订阅文件不存在时，使用空配置
+    sub_cleaned = {}
+    sub_removed = []
+    if os.path.exists(sub_file):
+        log.info(f"读取订阅配置: {sub_file}")
+        try:
+            with open(sub_file, 'r', encoding='utf-8') as f:
+                sub = yaml.safe_load(f) or {}
+            
+            if not isinstance(sub, dict):
+                log.warning(f"subscription.yaml 格式错误：期望 dict，实际 {type(sub)}")
+            else:
+                # 白名单过滤：只保留订阅相关字段
+                sub_cleaned, sub_removed = clean_sub(sub, ALLOWED_SUB_FIELDS)
+                if sub_removed:
+                    log.info(f"从订阅中剔除 {len(sub_removed)} 个非白名单字段（保护系统配置）:")
+                    for k in sub_removed:
+                        log.info(f"  - {k}")
+        except Exception as e:
+            log.warning(f"读取订阅配置失败: {e}，使用空订阅")
+    else:
+        log.info(f"订阅配置不存在，使用空订阅")
 
     # 合并：base 在前（base 字段优先），sub_cleaned 补充（白名单字段）
     merged = {**base, **sub_cleaned}
@@ -119,10 +126,6 @@ def main():
 
     if not os.path.exists(base_file):
         log.error(f"基础配置不存在: {base_file}")
-        sys.exit(1)
-
-    if not os.path.exists(sub_file):
-        log.error(f"订阅配置不存在: {sub_file}")
         sys.exit(1)
 
     try:

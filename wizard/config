@@ -64,7 +64,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/\n\n📄 主配置: config.yaml\n📄 订阅: subscription.yaml\n📄 日志: info.log\n\n版本: v2.0.6 | MiProxy"
+        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/\n\n📄 主配置: config.yaml\n📄 订阅: subscription.yaml\n📄 日志: info.log\n\n版本: v2.1.6 | MiProxy"
       }
     ]
   }

@@ -13,8 +13,16 @@
 
 set -u
 
-VAR_DIR="${VAR_DIR:-/vol1/@appdata/miproxy}"
-SCRIPT_DIR="${SCRIPT_DIR:-/var/apps/miproxy/cmd}"
+# 优先使用传入的环境变量
+# main 启动守护进程时会通过 env 传入 VAR_DIR 和 SCRIPT_DIR
+# 如果未传入（独立运行），使用动态推导
+if [ -z "${VAR_DIR:-}" ]; then
+    # 从脚本路径推断 VAR_DIR（假设 /var/apps/{app}/cmd/refresh_subscription_loop.sh）
+    VAR_DIR="$(dirname "$(dirname "$0")")"
+fi
+if [ -z "${SCRIPT_DIR:-}" ]; then
+    SCRIPT_DIR="$(dirname "$0")"
+fi
 LOG_FILE="${VAR_DIR}/subscription_refresh.log"
 PID_FILE="${VAR_DIR}/refresh_subscription.pid"
 LOCK_FILE="${VAR_DIR}/refresh_subscription.lock"

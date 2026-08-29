@@ -1,52 +1,28 @@
 [
   {
-    "stepTitle": "欢迎安装 MiHomo",
+    "stepTitle": "欢迎安装 MiProxy",
     "items": [
       {
         "type": "tips",
-        "helpText": "MiHomo (Clash.Meta) 是支持全协议的高级代理核心。本应用已集成 mihomo 核心和两种 Web 控制面板，安装即可使用，无需下载。"
+        "helpText": "MiProxy 是基于 mihomo 的高效代理工具，支持多种协议，可视化控制面板，开箱即用。"
       }
     ]
   },
   {
-    "stepTitle": "选择控制面板",
+    "stepTitle": "控制面板",
     "items": [
+      {
+        "type": "tips",
+        "helpText": "选择要安装的控制面板。Zashboard 功能更丰富，MetaCubeXD 更轻量。"
+      },
       {
         "type": "radio",
         "field": "wizard_dashboard",
-        "label": "控制面板",
-        "initValue": "zashboard",
+        "label": "选择控制面板",
+        "defaultValue": "zashboard",
         "options": [
-          { "label": "Zashboard v3.24.0 (推荐，界面美观功能丰富)", "value": "zashboard" },
-          { "label": "MetaCubeXD v1.273.0 (轻量级，兼容性好)", "value": "metacubexd" }
-        ],
-        "rules": [
-          { "required": true, "message": "请选择控制面板" }
-        ]
-      }
-    ]
-  },
-  {
-    "stepTitle": "网络设置",
-    "items": [
-      {
-        "type": "text",
-        "field": "wizard_http_port",
-        "label": "HTTP/SOCKS5 代理端口",
-        "initValue": "7890",
-        "rules": [
-          { "required": true, "message": "请输入代理端口" },
-          { "pattern": "^[0-9]+$", "message": "端口号必须是数字" }
-        ]
-      },
-      {
-        "type": "text",
-        "field": "wizard_api_port",
-        "label": "控制面板/API 端口",
-        "initValue": "9090",
-        "rules": [
-          { "required": true, "message": "请输入API端口" },
-          { "pattern": "^[0-9]+$", "message": "端口号必须是数字" }
+          { "value": "zashboard", "label": "Zashboard（推荐）— 现代化界面，功能丰富，支持深色模式" },
+          { "value": "metacubexd", "label": "MetaCubeXD — 经典 Clash 风格界面，轻量稳定" }
         ]
       }
     ]
@@ -55,36 +31,63 @@
     "stepTitle": "订阅设置",
     "items": [
       {
+        "type": "tips",
+        "helpText": "配置代理节点订阅。可选择远程 URL 或本地文件，订阅将自动更新。"
+      },
+      {
         "type": "radio",
         "field": "wizard_sub_type",
-        "label": "订阅方式",
-        "initValue": "none",
+        "label": "订阅类型",
+        "defaultValue": "none",
         "options": [
-          { "label": "不使用订阅（之后手动配置节点）", "value": "none" },
-          { "label": "远程订阅（输入订阅 URL）", "value": "remote" },
-          { "label": "本地订阅（指定文件路径）", "value": "local" }
+          { "value": "none", "label": "暂不配置订阅" },
+          { "value": "remote", "label": "远程订阅 URL" },
+          { "value": "local", "label": "本地订阅文件" }
         ],
-        "rules": [
-          { "required": true, "message": "请选择订阅方式" }
-        ]
+        "rules": [{ "required": true, "message": "请选择订阅类型" }]
       },
       {
         "type": "text",
         "field": "wizard_sub_url",
-        "label": "远程订阅 URL（仅当选择远程订阅时填）",
+        "label": "订阅 URL",
         "initValue": "",
         "rules": [
-          { "pattern": "^https?://.+", "message": "请输入正确的 URL 格式" }
-        ]
+          { "pattern": "^https?://.*|^$", "message": "请输入正确的订阅 URL" }
+        ],
+        "visibleIf": { "field": "wizard_sub_type", "value": "remote" }
       },
       {
         "type": "text",
         "field": "wizard_sub_path",
-        "label": "本地订阅文件路径（仅当选择本地订阅时填）",
-        "initValue": "/vol1/@appshare/mihomo/sub.yaml",
+        "label": "本地订阅文件",
+        "initValue": "/vol1/@appshare/miproxy/sub.yaml",
         "rules": [
-          { "min": 1, "message": "请输入文件路径" }
-        ]
+          { "min": 0, "message": "请输入订阅文件路径" }
+        ],
+        "visibleIf": { "field": "wizard_sub_type", "value": "local" }
+      }
+    ]
+  },
+  {
+    "stepTitle": "自动刷新",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "设置订阅自动刷新间隔。关闭后仅在手动保存设置时刷新。"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_refresh_interval",
+        "label": "刷新间隔",
+        "defaultValue": "6",
+        "options": [
+          { "value": "0",  "label": "关闭自动刷新" },
+          { "value": "1",  "label": "每 1 小时" },
+          { "value": "6",  "label": "每 6 小时（推荐）" },
+          { "value": "12", "label": "每 12 小时" },
+          { "value": "24", "label": "每 24 小时" }
+        ],
+        "rules": [{ "required": true, "message": "请选择刷新间隔" }]
       }
     ]
   }

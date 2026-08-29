@@ -57,7 +57,7 @@ jobs:
       - name: 获取变更信息
         id: changes
         run: |
-          git fetch --tags
+          git fetch --tags --force
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "上一个版本: ${LAST_TAG:-无}"
           

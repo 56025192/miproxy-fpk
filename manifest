@@ -1,9 +1,9 @@
 # MiProxy FPK Application Manifest
 # ================================
 appname               = miproxy
-version               = 2.6.1
+version               = 2.6.2
 display_name          = MiProxy
-desc                  = <h3>MiProxy v2.6.1</h3><p>mihomo 代理核心，简洁高效的代理工具</p><ul><li>支持 VMess、VLess、Trojan、Shadowsocks、Hysteria2 等多种协议</li><li>内置 Zashboard / MetaCubeXD 双控制面板</li><li>订阅管理 + 自动刷新</li><li>局域网共享上网</li><li>离线 GEO 数据库，开箱即用</li></ul>
+desc                  = <h3>MiProxy v2.6.2</h3><p>mihomo 代理核心，简洁高效的代理工具</p><ul><li>支持 VMess、VLess、Trojan、Shadowsocks、Hysteria2 等多种协议</li><li>内置 Zashboard / MetaCubeXD 双控制面板</li><li>订阅管理 + 自动刷新</li><li>局域网共享上网</li><li>离线 GEO 数据库，开箱即用</li></ul>
 platform              = all
 source                = thirdparty
 os_min_version        = 0.9.27
@@ -17,6 +17,7 @@ startup               = true
 service_port          = 9090
 desktop_uidir         = ui
 desktop_applaunchname = miproxy.dashboard
+
 
 
 

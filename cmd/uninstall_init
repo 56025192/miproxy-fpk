@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# MiProxy uninstall init
+# MiProxy 卸载前的初始化脚本
+# 标记数据保留标志
 
 VAR_DIR="${TRIM_PKGVAR}"
 
-# Mark data for preservation
+# 标记数据保留（供 uninstall_callback 判断）
 touch "${VAR_DIR}/.preserved"
 
 exit 0

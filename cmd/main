@@ -7,7 +7,7 @@ REFRESH_CONF="${TRIM_PKGVAR}/refresh_subscription.conf"
 
 # MiProxy 核心路径（TRIM_PKGVAR 就是 var 目录）
 MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
-MIHOMO_DIR="${TRIM_PKGVAR}"
+MIHOMO_DIR="${TRIM_PKGVAR}/target"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 
 # 关键：必须用绝对路径，-f 的相对路径在某些情况下找不到

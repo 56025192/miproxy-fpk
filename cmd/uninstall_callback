@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# MiProxy uninstall callback
+# MiProxy 卸载完成后的回调脚本
+# 负责停止服务、清理进程等清理工作
 
 set -e
 
@@ -13,7 +14,7 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
-# Stop refresh daemon
+# 停止订阅刷新守护进程
 if [ -f "${REFRESH_PID_FILE}" ]; then
     pid=$(head -n 1 "${REFRESH_PID_FILE}" | tr -d '[:space:]')
     if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
@@ -22,7 +23,7 @@ if [ -f "${REFRESH_PID_FILE}" ]; then
     rm -f "${REFRESH_PID_FILE}"
 fi
 
-# Stop miproxy
+# 停止 miproxy 主进程
 if [ -f "${PID_FILE}" ]; then
     pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
     if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
@@ -33,9 +34,9 @@ if [ -f "${PID_FILE}" ]; then
     rm -f "${PID_FILE}"
 fi
 
-# Clean up socket
+# 清理 socket 文件
 SOCKET_PATH="${TRIM_APPDEST}/miproxy.sock"
 rm -f "${SOCKET_PATH}"
 
-log_msg "Uninstall complete"
+log_msg "卸载完成"
 exit 0

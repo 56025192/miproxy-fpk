@@ -65,6 +65,7 @@ log_msg "复制桌面入口配置和图标..."
 mkdir -p "${UI_TARGET}/images"
 cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
 cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
+cp -f "${APP_DEST}/ui/select.html" "${UI_TARGET}/select.html" 2>/dev/null || true
 chmod 666 "${UI_TARGET}/config"
 log_msg "桌面入口配置和图标复制完成"
 
@@ -240,4 +241,5 @@ log_msg "守护进程配置已写入 (interval=${REFRESH_INTERVAL_SEC}s)"
 
 log_msg "安装完成!"
 exit 0
+
 

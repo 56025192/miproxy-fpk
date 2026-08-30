@@ -2,7 +2,8 @@
 
 # MiProxy 配置变更回调
 # 用户在 fnOS 应用设置面板修改：
-#   - 用户验证（wizard_username, wizard_password）
+#   - 代理用户验证（wizard_proxy_user, wizard_proxy_pass）
+#   - 控制面板密钥（wizard_secret）
 #   - 远程订阅 URL（wizard_sub_url）
 #   - 本地订阅路径（wizard_sub_path）
 # 自动应用变更并重启 miproxy
@@ -14,8 +15,9 @@ VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
 LOG_FILE="${VAR_DIR}/info.log"
 
-USERNAME="${wizard_username:-}"
-PASSWORD="${wizard_password:-}"
+PROXY_USER="${wizard_proxy_user:-}"
+PROXY_PASS="${wizard_proxy_pass:-}"
+SECRET="${wizard_secret:-}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
@@ -30,7 +32,8 @@ log_msg() {
 }
 
 log_msg "config_callback: 收到配置更新请求"
-log_msg "  wizard_username=${USERNAME}"
+log_msg "  wizard_proxy_user=${PROXY_USER}"
+log_msg "  wizard_secret=${SECRET}"
 log_msg "  wizard_sub_url=${SUB_URL}"
 log_msg "  wizard_sub_path=${SUB_PATH}"
 
@@ -38,33 +41,42 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NEED_RESTART=0
 
-# === 1. 处理用户验证更新 ===
+# === 1. 处理代理用户验证更新 ===
 if [ -f "${VAR_DIR}/base.yaml" ]; then
-    if [ -n "${USERNAME}" ] && [ -n "${PASSWORD}" ]; then
-        # 添加/更新验证
-        NEW_AUTH_LINE="  - \"${USERNAME}:${PASSWORD}\""
-        # 移除旧配置
-        sed -i '/^# 用户验证/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+    # 检查是否需要更新验证配置
+    if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+        # 添加/更新代理验证
+        sed -i '/^# 代理用户验证/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
         sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
         sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        # 添加新配置
-        sed -i "/^secret:/a\\
-# 用户验证\\
+        sed -i "/^# 控制面板/a\\
+# 代理用户验证（HTTP/SOCKS5/Mixed 连接验证）\\
 authentication:\\
-${NEW_AUTH_LINE}" "${VAR_DIR}/base.yaml"
-        log_msg "已更新用户验证: ${USERNAME}"
+  - \"${PROXY_USER}:${PROXY_PASS}\"" "${VAR_DIR}/base.yaml"
+        log_msg "已更新代理用户验证: ${PROXY_USER}"
         NEED_RESTART=1
-    elif [ -z "${USERNAME}" ] && [ -z "${PASSWORD}" ]; then
+    elif [ -z "${PROXY_USER}" ] && [ -z "${PROXY_PASS}" ]; then
         # 移除验证
-        sed -i '/^# 用户验证/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        sed -i '/^# 代理用户验证/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
         sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
         sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        log_msg "已移除用户验证"
+        log_msg "已移除代理用户验证"
+        NEED_RESTART=1
+    fi
+    
+    # === 2. 处理控制面板密钥更新 ===
+    if [ -n "${SECRET}" ]; then
+        sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
+        log_msg "已更新控制面板密钥"
+        NEED_RESTART=1
+    else
+        sed -i 's/^secret: ".*"/secret: ""/' "${VAR_DIR}/base.yaml"
+        log_msg "已清除控制面板密钥"
         NEED_RESTART=1
     fi
 fi
 
-# === 2. 处理订阅更新 ===
+# === 3. 处理订阅更新 ===
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 SUB_CHANGED=0
 
@@ -106,14 +118,14 @@ if [ "${SUB_CHANGED}" = "1" ]; then
     NEED_RESTART=1
 fi
 
-# === 3. 重新生成主配置 ===
+# === 4. 重新生成主配置 ===
 if [ "${NEED_RESTART}" = "1" ]; then
     log_msg "重新生成主配置 config.yaml..."
     python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
     chmod 666 "${VAR_DIR}/config.yaml"
     log_msg "主配置已更新"
 
-    # === 4. 重启 miproxy ===
+    # === 5. 重启 miproxy ===
     log_msg "重启 miproxy..."
     bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
     sleep 2
@@ -123,7 +135,7 @@ else
     log_msg "无变更，跳过重启"
 fi
 
-# === 5. 更新守护进程配置 ===
+# === 6. 更新守护进程配置 ===
 log_msg "更新订阅刷新守护进程配置..."
 if [ -n "${SUB_URL}" ]; then
     CURRENT_SUB_TYPE="remote"

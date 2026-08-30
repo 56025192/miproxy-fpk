@@ -1,13 +1,14 @@
 {
   ".url": {
-    "miproxy.dashboard": {
+    "miproxy.APPLICATION": {
       "title": "MiProxy 控制面板",
-      "desc": "mihomo 代理核心，点击选择控制面板",
+      "desc": "mihomo 代理核心",
       "icon": "images/icon_{0}.png",
       "type": "iframe",
-      "protocol": "http",
-      "port": "9090",
-      "url": "/ui/index.html",
+      "protocol": "",
+      "gatewaySocket": "miproxy.sock",
+      "gatewayPrefix": "/app/miproxy",
+      "url": "/app/miproxy",
       "allUsers": true
     }
   }

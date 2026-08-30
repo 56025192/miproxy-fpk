@@ -98,7 +98,7 @@ else
         echo "ipv6: false"
         echo ""
         echo "# 控制面板"
-        echo "external-controller: 0.0.0.0:${API_PORT}"
+        echo "external-controller: 127.0.0.1:${API_PORT}"
         echo "external-ui: ${UI_TARGET}"
         echo "external-ui-name: \"\""
         echo "secret: \"\""
@@ -242,6 +242,7 @@ log_msg "守护进程配置已写入 (interval=${REFRESH_INTERVAL_SEC}s)"
 
 log_msg "安装完成!"
 exit 0
+
 
 
 

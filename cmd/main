@@ -5,15 +5,15 @@ PID_FILE="${TRIM_PKGVAR}/app.pid"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_subscription.pid"
 REFRESH_CONF="${TRIM_PKGVAR}/refresh_subscription.conf"
 
-# Paths
+# MiProxy 核心路径
 MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
 MIHOMO_DIR="${TRIM_PKGVAR}"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 
-# Unix Socket for fnOS gateway
+# Unix Socket 路径（fnOS 网关通过 socket 反向代理访问）
 SOCKET_PATH="${TRIM_APPDEST}/miproxy.sock"
 
-# Command with unix socket for external-controller
+# 启动命令：用 unix socket 监听 external-controller
 CMD="${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG} -ext-ctl-unix ${SOCKET_PATH}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,25 +22,26 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
 }
 
-# Wait for unix socket ready
+# 等待 unix socket 就绪（参考 flymail 的实现）
 wait_socket_ready() {
     local count=0
     while [ $count -lt 30 ]; do
         if [ -S "${SOCKET_PATH}" ]; then
-            log_msg "Socket ready: ${SOCKET_PATH}"
+            log_msg "Socket 就绪: ${SOCKET_PATH}"
             return 0
         fi
         sleep 1
         count=$((count + 1))
     done
-    log_msg "Socket wait timeout"
+    log_msg "等待 Socket 就绪超时"
     return 1
 }
 
-# Refresh daemon management
+# ============ 订阅刷新守护进程管理 ============
+
 start_refresh_daemon() {
     if [ ! -f "${REFRESH_CONF}" ]; then
-        log_msg "Refresh config not found, skip"
+        log_msg "守护进程配置不存在，跳过"
         return 1
     fi
 
@@ -51,16 +52,16 @@ start_refresh_daemon() {
     interval=$(grep -E "^REFRESH_INTERVAL=" "${REFRESH_CONF}" | cut -d= -f2)
 
     if [ "${interval}" = "0" ] || [ -z "${interval}" ]; then
-        log_msg "Refresh disabled"
+        log_msg "守护进程禁用"
         return 0
     fi
     if [ "${sub_type}" = "none" ] || { [ -z "${sub_url}" ] && [ -z "${sub_path}" ]; }; then
-        log_msg "No subscription, skip"
+        log_msg "无订阅源，跳过守护进程"
         return 0
     fi
 
     if [ ! -f "${SCRIPT_DIR}/refresh_subscription_loop.sh" ]; then
-        log_msg "Refresh script not found"
+        log_msg "守护进程脚本不存在"
         return 1
     fi
 
@@ -68,13 +69,13 @@ start_refresh_daemon() {
         local existing_pid
         existing_pid=$(head -n 1 "${REFRESH_PID_FILE}" | tr -d '[:space:]')
         if [ -n "${existing_pid}" ] && kill -0 "${existing_pid}" 2>/dev/null; then
-            log_msg "Refresh daemon running (PID=${existing_pid}), skip"
+            log_msg "守护进程已运行（PID=${existing_pid}），跳过启动"
             return 0
         fi
         rm -f "${REFRESH_PID_FILE}"
     fi
 
-    log_msg "Start refresh daemon (interval=${interval}s, type=${sub_type})..."
+    log_msg "启动订阅刷新守护进程 (interval=${interval}s, type=${sub_type})..."
     setsid env \
         SUBSCRIPTION_URL="${sub_url}" \
         SUBSCRIPTION_PATH="${sub_path}" \
@@ -99,7 +100,7 @@ stop_refresh_daemon() {
     fi
 
     if kill -0 "${pid}" 2>/dev/null; then
-        log_msg "Stop refresh daemon PID=${pid}..."
+        log_msg "停止守护进程 PID=${pid}..."
         kill -TERM "${pid}" 2>>"${LOG_FILE}" || true
         local count=0
         while kill -0 "${pid}" 2>/dev/null && [ $count -lt 5 ]; do
@@ -115,19 +116,21 @@ stop_refresh_daemon() {
 }
 
 restart_refresh_daemon() {
-    log_msg "Restart refresh daemon..."
+    log_msg "重启守护进程..."
     stop_refresh_daemon
     sleep 1
     start_refresh_daemon
-    log_msg "Refresh daemon restarted"
+    log_msg "守护进程重启完成"
 }
 
-# Main process management
+# ============ miproxy 主进程管理 ============
+
 start_process() {
     if status; then
         return 0
     fi
 
+    # 清理可能残留的 socket 文件
     rm -f "${SOCKET_PATH}"
 
     log_msg "Starting mihomo ..."
@@ -135,6 +138,7 @@ start_process() {
     printf "%s" "$!" > ${PID_FILE}
     log_msg "mihomo PID=$!"
 
+    # 等待 socket 就绪，让 fnOS 网关能立即连接
     wait_socket_ready
     return 0
 }
@@ -149,30 +153,31 @@ stop_process() {
         if ! check_process "${pid}"; then
             rm -f "${PID_FILE}"
             rm -f "${SOCKET_PATH}"
-            log_msg "pid file removed"
+            log_msg "remove pid file"
             return
         fi
 
-        log_msg "send TERM to PID:${pid}..."
+        log_msg "send TERM signal to PID:${pid}..."
         kill -TERM ${pid} >> ${LOG_FILE} 2>&1
 
         local count=0
         while check_process "${pid}" && [ $count -lt 10 ]; do
             sleep 1
             count=$((count + 1))
-            log_msg "waiting... (${count}s/10s)"
+            log_msg "waiting process terminal... (${count}s/10s)"
         done
 
         if check_process "${pid}"; then
-            log_msg "send KILL to PID:${pid}..."
+            log_msg "send KILL signal to PID:${pid}..."
             kill -KILL "${pid}"
             sleep 1
             rm -f "${PID_FILE}"
         else
-            log_msg "process killed"
+            log_msg "process killed... "
         fi
     fi
 
+    # 清理 socket 文件
     rm -f "${SOCKET_PATH}"
     return 0
 }
@@ -195,6 +200,7 @@ status() {
             rm -f "${PID_FILE}"
         fi
     fi
+
     return 1
 }
 

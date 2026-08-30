@@ -1,12 +1,6 @@
 #!/bin/bash
 
 # MiProxy 配置变更回调
-# 用户在 fnOS 应用设置面板修改：
-#   - 代理用户验证（wizard_proxy_user, wizard_proxy_pass）
-#   - 控制面板密钥（wizard_secret）
-#   - 远程订阅 URL（wizard_sub_url）
-#   - 本地订阅路径（wizard_sub_path）
-# 自动应用变更并重启 miproxy
 
 set -e
 
@@ -32,110 +26,75 @@ log_msg() {
 }
 
 log_msg "config_callback: 收到配置更新请求"
-log_msg "  wizard_proxy_user=${PROXY_USER}"
-log_msg "  wizard_secret=${SECRET}"
-log_msg "  wizard_sub_url=${SUB_URL}"
-log_msg "  wizard_sub_path=${SUB_PATH}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NEED_RESTART=0
 
-# === 1. 处理代理用户验证更新 ===
+# === 处理 base.yaml 更新 ===
 if [ -f "${VAR_DIR}/base.yaml" ]; then
-    # 检查是否需要更新验证配置
+    # 更新 secret
+    sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
+    
+    # 更新 authentication
     if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
-        # 添加/更新代理验证
-        sed -i '/^# 代理用户验证/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        # 移除旧的 authentication
         sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
         sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        sed -i "/^# 控制面板/a\\
-# 代理用户验证（HTTP/SOCKS5/Mixed 连接验证）\\
+        # 添加新的 authentication
+        sed -i "/^secret:/a\\
 authentication:\\
   - \"${PROXY_USER}:${PROXY_PASS}\"" "${VAR_DIR}/base.yaml"
         log_msg "已更新代理用户验证: ${PROXY_USER}"
         NEED_RESTART=1
-    elif [ -z "${PROXY_USER}" ] && [ -z "${PROXY_PASS}" ]; then
-        # 移除验证
-        sed -i '/^# 代理用户验证/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        log_msg "已移除代理用户验证"
-        NEED_RESTART=1
-    fi
-    
-    # === 2. 处理控制面板密钥更新 ===
-    if [ -n "${SECRET}" ]; then
-        sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
-        log_msg "已更新控制面板密钥"
-        NEED_RESTART=1
-    else
-        sed -i 's/^secret: ".*"/secret: ""/' "${VAR_DIR}/base.yaml"
-        log_msg "已清除控制面板密钥"
-        NEED_RESTART=1
     fi
 fi
 
-# === 3. 处理订阅更新 ===
+# === 处理订阅更新 ===
 SUB_FILE="${VAR_DIR}/subscription.yaml"
-SUB_CHANGED=0
 
 if [ -n "${SUB_URL}" ]; then
     log_msg "下载远程订阅: ${SUB_URL}"
     if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp"; then
         mv "${SUB_FILE}.tmp" "${SUB_FILE}"
         log_msg "远程订阅更新成功"
-        SUB_CHANGED=1
+        chmod 666 "${SUB_FILE}"
+        NEED_RESTART=1
     else
         rm -f "${SUB_FILE}.tmp"
         log_msg "远程订阅下载失败"
-        echo "远程订阅下载失败，请检查 URL 是否正确、网络是否可达" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        echo "远程订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
         exit 1
     fi
 elif [ -n "${SUB_PATH}" ]; then
     if [ -f "${SUB_PATH}" ]; then
         if [ "${SUB_PATH}" != "${SUB_FILE}" ]; then
+            cp -f "${SUB_PATH}" "${SUB_FILE}"
+            chmod 666 "${SUB_FILE}"
             log_msg "复制本地订阅: ${SUB_PATH}"
-            if cp -f "${SUB_PATH}" "${SUB_FILE}" 2>>"${LOG_FILE}"; then
-                SUB_CHANGED=1
-            else
-                log_msg "复制订阅失败"
-                echo "复制订阅失败: ${SUB_PATH}" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
-                exit 1
-            fi
-        else
-            log_msg "源和目标相同，跳过复制"
+            NEED_RESTART=1
         fi
     else
         log_msg "本地订阅文件不存在: ${SUB_PATH}"
-        echo "本地订阅文件不存在: ${SUB_PATH}" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        echo "本地订阅文件不存在" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
         exit 1
     fi
 fi
 
-if [ "${SUB_CHANGED}" = "1" ]; then
-    chmod 666 "${SUB_FILE}"
-    NEED_RESTART=1
-fi
-
-# === 4. 重新生成主配置 ===
+# === 重新生成主配置 ===
 if [ "${NEED_RESTART}" = "1" ]; then
     log_msg "重新生成主配置 config.yaml..."
     python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
     chmod 666 "${VAR_DIR}/config.yaml"
-    log_msg "主配置已更新"
 
-    # === 5. 重启 miproxy ===
     log_msg "重启 miproxy..."
     bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
     sleep 2
     bash "${SCRIPT_DIR}/main" start
     log_msg "miproxy 重启完成"
-else
-    log_msg "无变更，跳过重启"
 fi
 
-# === 6. 更新守护进程配置 ===
+# === 更新守护进程配置 ===
 log_msg "更新订阅刷新守护进程配置..."
 if [ -n "${SUB_URL}" ]; then
     CURRENT_SUB_TYPE="remote"
@@ -152,9 +111,7 @@ fi
     echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
 } > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
-log_msg "守护进程配置已更新 (interval=${REFRESH_INTERVAL_SEC}s, type=${CURRENT_SUB_TYPE})"
 
-# 重启守护进程
-bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "守护进程重启失败（不影响主程序）"
+bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "守护进程重启失败"
 
 exit 0

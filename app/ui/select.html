@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>选择控制面板 - MiProxy</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            color: #1a1a2e;
+            margin-bottom: 8px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .panels {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .panel-card {
+            flex: 1;
+            min-width: 220px;
+            padding: 30px 20px;
+            border: 3px solid #e0e0e0;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: #333;
+        }
+        .panel-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+        }
+        .zashboard {
+            border-color: #10b981;
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+        }
+        .zashboard:hover {
+            border-color: #059669;
+            background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+        }
+        .metacubexd {
+            border-color: #f59e0b;
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+        }
+        .metacubexd:hover {
+            border-color: #d97706;
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        }
+        .panel-card h2 {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #1a1a2e;
+        }
+        .panel-card p {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.5;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            margin-top: 12px;
+            font-weight: 500;
+        }
+        .badge-recommend {
+            background: #10b981;
+            color: white;
+        }
+        .badge-lightweight {
+            background: #f59e0b;
+            color: white;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            color: #999;
+            font-size: 12px;
+        }
+        .footer a {
+            color: #666;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 MiProxy</h1>
+        <p class="subtitle">请选择要打开的控制面板</p>
+        
+        <div class="panels">
+            <a href="/ui/zashboard/" class="panel-card zashboard">
+                <h2>📊 Zashboard</h2>
+                <p>现代化界面，功能丰富<br/>支持节点管理、规则配置、流量统计</p>
+                <span class="badge badge-recommend">推荐</span>
+            </a>
+            
+            <a href="/ui/metacubexd/" class="panel-card metacubexd">
+                <h2>📋 MetaCubeXD</h2>
+                <p>经典 Clash 风格，轻量稳定<br/>简洁直观，易于操作</p>
+                <span class="badge badge-lightweight">轻量</span>
+            </a>
+        </div>
+        
+        <div class="footer">
+            <p>MiProxy v2.5.7 | mihomo 代理核心</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,5 +1,7 @@
 #!/bin/bash
 
-### This script is called after the user upgrades the application.
+# MiProxy 升级完成后的回调脚本
+
+echo "MiProxy upgrade_callback"
 
 exit 0

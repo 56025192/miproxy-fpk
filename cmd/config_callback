@@ -2,7 +2,7 @@
 
 # MiProxy 配置变更回调
 # 用户在 fnOS 应用设置面板修改：
-#   - 控制面板（wizard_dashboard）
+#   - 用户验证（wizard_username, wizard_password）
 #   - 远程订阅 URL（wizard_sub_url）
 #   - 本地订阅路径（wizard_sub_path）
 # 自动应用变更并重启 miproxy
@@ -14,7 +14,8 @@ VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
 LOG_FILE="${VAR_DIR}/info.log"
 
-DASHBOARD="${wizard_dashboard:-}"
+USERNAME="${wizard_username:-}"
+PASSWORD="${wizard_password:-}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
@@ -29,7 +30,7 @@ log_msg() {
 }
 
 log_msg "config_callback: 收到配置更新请求"
-log_msg "  wizard_dashboard=${DASHBOARD}"
+log_msg "  wizard_username=${USERNAME}"
 log_msg "  wizard_sub_url=${SUB_URL}"
 log_msg "  wizard_sub_path=${SUB_PATH}"
 
@@ -37,44 +38,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NEED_RESTART=0
 
-# === 1. 处理面板切换 ===
-if [ -n "${DASHBOARD}" ]; then
-    # 从 base.yaml 读取当前面板名
-    CURRENT_DASHBOARD=""
-    if [ -f "${VAR_DIR}/base.yaml" ]; then
-        CURRENT_DASHBOARD=$(grep -E "^external-ui-name:" "${VAR_DIR}/base.yaml" | awk '{print $2}' | tr -d '"' | tr -d "'")
-    fi
-
-    if [ "${DASHBOARD}" != "${CURRENT_DASHBOARD}" ]; then
-        log_msg "切换面板: ${CURRENT_DASHBOARD} -> ${DASHBOARD}"
-        if [ -d "${APP_DEST}/ui/${DASHBOARD}" ]; then
-            # miproxy 通过 external-ui + external-ui-name 组合定位面板
-            # 面板文件必须放到 ${UI_TARGET}/${DASHBOARD}/ 子目录下
-            rm -rf "${UI_TARGET:?}/${CURRENT_DASHBOARD}" 2>/dev/null || true
-            mkdir -p "${UI_TARGET}/${DASHBOARD}"
-            cp -rf "${APP_DEST}/ui/${DASHBOARD}/"* "${UI_TARGET}/${DASHBOARD}/"
-            log_msg "面板文件已替换为 ${DASHBOARD} (路径: ${UI_TARGET}/${DASHBOARD})"
-
-            # 更新 base.yaml
-            sed -i "s|^external-ui-name:.*|external-ui-name: ${DASHBOARD}|" "${VAR_DIR}/base.yaml"
-            log_msg "base.yaml 已更新"
-
-            # 更新桌面入口配置 app/ui/config 中的 url 路径
-            if [ -f "${UI_TARGET}/config" ]; then
-                sed -i "s|\"/ui/${CURRENT_DASHBOARD}/\"|\"/ui/${DASHBOARD}/\"|g" "${UI_TARGET}/config"
-                # 也处理不带末尾斜杠的情况
-                sed -i "s|\"/ui/${CURRENT_DASHBOARD}\"|\"/ui/${DASHBOARD}\"|g" "${UI_TARGET}/config"
-                log_msg "桌面入口已更新为 ${DASHBOARD}"
+# === 1. 处理用户验证更新 ===
+if [ -f "${VAR_DIR}/base.yaml" ]; then
+    # 检查验证配置是否变化
+    CURRENT_AUTH=$(grep -A1 "^authentication:" "${VAR_DIR}/base.yaml" 2>/dev/null | tail -1 | tr -d ' "' || echo "")
+    NEW_AUTH="${USERNAME}:${PASSWORD}"
+    
+    if [ -n "${NEW_AUTH}" ]; then
+        # 有新验证配置
+        if [ "${CURRENT_AUTH}" != "${NEW_AUTH}" ]; then
+            log_msg "更新用户验证: ${NEW_AUTH}"
+            # 替换 authentication 配置
+            if grep -q "^authentication:" "${VAR_DIR}/base.yaml"; then
+                sed -i "/^authentication:/,/^- /{ /^$/d; /^  - /{ s|.*|  - \"${NEW_AUTH}\"|; } }" "${VAR_DIR}/base.yaml"
+            else
+                # 在 secret 后添加 authentication
+                sed -i '/^secret:/a\authentication:\n  - "'"${USERNAME}:${PASSWORD}"'"' "${VAR_DIR}/base.yaml"
             fi
-
             NEED_RESTART=1
-        else
-            log_msg "错误: FPK 中没有 ui/${DASHBOARD} 目录"
-            echo "无效的面板选择：${DASHBOARD}" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
-            exit 1
         fi
     else
-        log_msg "面板未变化（${DASHBOARD}）"
+        # 新配置为空，移除验证
+        if [ -n "${CURRENT_AUTH}" ]; then
+            log_msg "移除用户验证"
+            sed -i '/^authentication:/,/^- /d' "${VAR_DIR}/base.yaml"
+            NEED_RESTART=1
+        fi
     fi
 fi
 
@@ -139,9 +128,7 @@ else
 fi
 
 # === 5. 始终更新守护进程配置 + 重启守护进程 ===
-# 即使 miproxy 主配置没变，刷新间隔变了也要重启守护进程
 log_msg "更新订阅刷新守护进程配置..."
-# 从当前订阅来源（已处理）推导出 type
 if [ -n "${SUB_URL}" ]; then
     CURRENT_SUB_TYPE="remote"
 elif [ -n "${SUB_PATH}" ]; then
@@ -159,7 +146,7 @@ EOF
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
 log_msg "守护进程配置已更新 (interval=${REFRESH_INTERVAL_SEC}s, type=${CURRENT_SUB_TYPE})"
 
-# 重启守护进程（kill 旧的，启动新的）
+# 重启守护进程
 bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "守护进程重启失败（不影响主程序）"
 
 exit 0

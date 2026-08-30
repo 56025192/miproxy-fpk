@@ -40,30 +40,28 @@ NEED_RESTART=0
 
 # === 1. 处理用户验证更新 ===
 if [ -f "${VAR_DIR}/base.yaml" ]; then
-    # 检查验证配置是否变化
-    CURRENT_AUTH=$(grep -A1 "^authentication:" "${VAR_DIR}/base.yaml" 2>/dev/null | tail -1 | tr -d ' "' || echo "")
-    NEW_AUTH="${USERNAME}:${PASSWORD}"
-    
-    if [ -n "${NEW_AUTH}" ]; then
-        # 有新验证配置
-        if [ "${CURRENT_AUTH}" != "${NEW_AUTH}" ]; then
-            log_msg "更新用户验证: ${NEW_AUTH}"
-            # 替换 authentication 配置
-            if grep -q "^authentication:" "${VAR_DIR}/base.yaml"; then
-                sed -i "/^authentication:/,/^- /{ /^$/d; /^  - /{ s|.*|  - \"${NEW_AUTH}\"|; } }" "${VAR_DIR}/base.yaml"
-            else
-                # 在 secret 后添加 authentication
-                sed -i '/^secret:/a\authentication:\n  - "'"${USERNAME}:${PASSWORD}"'"' "${VAR_DIR}/base.yaml"
-            fi
-            NEED_RESTART=1
-        fi
-    else
-        # 新配置为空，移除验证
-        if [ -n "${CURRENT_AUTH}" ]; then
-            log_msg "移除用户验证"
-            sed -i '/^authentication:/,/^- /d' "${VAR_DIR}/base.yaml"
-            NEED_RESTART=1
-        fi
+    # 检查是否需要更新验证配置
+    if [ -n "${USERNAME}" ] && [ -n "${PASSWORD}" ]; then
+        # 添加/更新验证
+        NEW_AUTH_LINE="  - \"${USERNAME}:${PASSWORD}\""
+        # 移除旧配置
+        sed -i '/^# 用户验证/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        # 添加新配置
+        sed -i "/^secret:/a\\
+# 用户验证\\
+authentication:\\
+${NEW_AUTH_LINE}" "${VAR_DIR}/base.yaml"
+        log_msg "已更新用户验证: ${USERNAME}"
+        NEED_RESTART=1
+    elif [ -z "${USERNAME}" ] && [ -z "${PASSWORD}" ]; then
+        # 移除验证
+        sed -i '/^# 用户验证/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        log_msg "已移除用户验证"
+        NEED_RESTART=1
     fi
 fi
 
@@ -85,7 +83,6 @@ if [ -n "${SUB_URL}" ]; then
     fi
 elif [ -n "${SUB_PATH}" ]; then
     if [ -f "${SUB_PATH}" ]; then
-        # 避免 cp 同文件报错触发 set -e
         if [ "${SUB_PATH}" != "${SUB_FILE}" ]; then
             log_msg "复制本地订阅: ${SUB_PATH}"
             if cp -f "${SUB_PATH}" "${SUB_FILE}" 2>>"${LOG_FILE}"; then
@@ -110,7 +107,7 @@ if [ "${SUB_CHANGED}" = "1" ]; then
     NEED_RESTART=1
 fi
 
-# === 3. 重新生成主配置（如有变更）===
+# === 3. 重新生成主配置 ===
 if [ "${NEED_RESTART}" = "1" ]; then
     log_msg "重新生成主配置 config.yaml..."
     python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
@@ -127,7 +124,7 @@ else
     log_msg "无变更，跳过重启"
 fi
 
-# === 5. 始终更新守护进程配置 + 重启守护进程 ===
+# === 5. 更新守护进程配置 ===
 log_msg "更新订阅刷新守护进程配置..."
 if [ -n "${SUB_URL}" ]; then
     CURRENT_SUB_TYPE="remote"
@@ -137,12 +134,12 @@ else
     CURRENT_SUB_TYPE="none"
 fi
 
-cat > "${VAR_DIR}/refresh_subscription.conf" << EOF
-SUBSCRIPTION_TYPE=${CURRENT_SUB_TYPE}
-SUBSCRIPTION_URL=${SUB_URL}
-SUBSCRIPTION_PATH=${SUB_PATH}
-REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}
-EOF
+{
+    echo "SUBSCRIPTION_TYPE=${CURRENT_SUB_TYPE}"
+    echo "SUBSCRIPTION_URL=${SUB_URL}"
+    echo "SUBSCRIPTION_PATH=${SUB_PATH}"
+    echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
+} > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
 log_msg "守护进程配置已更新 (interval=${REFRESH_INTERVAL_SEC}s, type=${CURRENT_SUB_TYPE})"
 

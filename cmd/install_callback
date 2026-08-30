@@ -1,17 +1,16 @@
 #!/bin/bash
 
-# MiProxy 安装后回调脚本
-# 拆分基础配置和订阅，订阅可随时通过设置面板更新
+# MiProxy install callback
+# Splits base config and subscription
 
 set -e
 
-# 目录（TRIM_PKGVAR 是 var 目录本身，TRIM_APPDEST 是 app 目录）
 APP_DEST="${TRIM_APPDEST}"
 TARGET_DIR="${TRIM_PKGVAR}/target"
 VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
 
-# 向导变量
+# Wizard variables
 PROXY_USER="${wizard_proxy_user:-}"
 PROXY_PASS="${wizard_proxy_pass:-}"
 SECRET="${wizard_secret:-}"
@@ -31,129 +30,120 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
-# 创建必要目录
 mkdir -p "${TARGET_DIR}"
 mkdir -p "${VAR_DIR}"
 mkdir -p "${UI_TARGET}"
 
-# 检测是否有上次保留的数据
+# Check preserved data
 PRESERVED_FLAG="${VAR_DIR}/.preserved"
 if [ -f "${PRESERVED_FLAG}" ]; then
-    log_msg "检测到上次保留的数据"
+    log_msg "Detected preserved data"
     PRESERVED=1
     rm -f "${PRESERVED_FLAG}"
 else
     PRESERVED=0
 fi
 
-# 复制 miproxy 核心
-log_msg "复制 mihomo 核心..."
+# Copy mihomo binary
+log_msg "Copy mihomo binary..."
 cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
 chmod +x "${TARGET_DIR}/mihomo"
-log_msg "mihomo 核心复制完成"
+log_msg "mihomo binary copied"
 
-# 复制两个面板（都复制）
-log_msg "复制控制面板..."
+# Copy both panels
+log_msg "Copy control panels..."
 mkdir -p "${UI_TARGET}/zashboard"
 mkdir -p "${UI_TARGET}/metacubexd"
 cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null || true
 cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null || true
-log_msg "控制面板复制完成"
+log_msg "Panels copied"
 
-# 复制桌面入口配置和图标
-log_msg "复制桌面入口配置和图标..."
+# Copy config and icons
+log_msg "Copy config and icons..."
 mkdir -p "${UI_TARGET}/images"
 cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
 cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html" 2>/dev/null || true
 cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
 chmod 666 "${UI_TARGET}/config"
-log_msg "桌面入口配置和图标复制完成"
+log_msg "Config and icons copied"
 
-# 构建 authentication 配置（代理用户验证）
+# Build authentication config
 AUTH_CONFIG=""
 if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
     AUTH_CONFIG="authentication:
   - \"${PROXY_USER}:${PROXY_PASS}\""
-    log_msg "已启用代理用户验证: ${PROXY_USER}"
+    log_msg "Proxy auth enabled: ${PROXY_USER}"
 else
-    log_msg "未设置代理用户验证"
+    log_msg "Proxy auth disabled"
 fi
 
-# 构建 secret 配置（控制面板密钥）
+# Build secret config
 if [ -n "${SECRET}" ]; then
     SECRET_CONFIG="secret: \"${SECRET}\""
-    log_msg "已设置控制面板密钥"
+    log_msg "Panel secret enabled"
 else
     SECRET_CONFIG="secret: \"\""
-    log_msg "未设置控制面板密钥"
+    log_msg "Panel secret disabled"
 fi
 
-# 写入 base.yaml
+# Write base.yaml
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
-    log_msg "复用现有 base.yaml"
+    log_msg "Keep existing base.yaml"
 else
-    log_msg "写入基础配置 base.yaml..."
+    log_msg "Write base.yaml..."
 cat > "${VAR_DIR}/base.yaml" << EOF
-# MiProxy 基础配置（系统管理，请勿手动修改）
-# 订阅相关字段（proxies/proxy-groups/rules/proxy-providers）请在订阅文件中配置
-
 mixed-port: ${HTTP_PORT}
 allow-lan: true
 mode: rule
 log-level: info
 ipv6: false
 
-# 控制面板
 external-controller: 0.0.0.0:${API_PORT}
 external-ui: ${UI_TARGET}
 external-ui-name: zashboard
 ${SECRET_CONFIG}
 
-# 代理用户验证
 ${AUTH_CONFIG}
 
-# 跨域允许
 external-controller-cors:
   allow-private-network: true
   allow-origins:
     - "*"
 
-# TUN 默认关闭
 tun:
   enable: false
 
-# GEO 数据库模式（避免 miproxy 启动时联网下载）
 geodata-mode: true
 EOF
 fi
 
-# 复制离线 GEO 数据库
+# Copy GEO databases
 if [ -d "${APP_DEST}/data" ]; then
-    log_msg "复制离线 GEO 数据库..."
+    log_msg "Copy GEO databases..."
     cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"
     cp -f "${APP_DEST}/data/geosite.dat" "${VAR_DIR}/geosite.dat"
     cp -f "${APP_DEST}/data/Country.mmdb" "${VAR_DIR}/Country.mmdb"
     chmod 666 "${VAR_DIR}/geoip.dat" "${VAR_DIR}/geosite.dat" "${VAR_DIR}/Country.mmdb"
-    log_msg "离线 GEO 数据库已就绪"
+    log_msg "GEO databases copied"
 fi
 
-# 写入 subscription.yaml
-log_msg "处理订阅 (类型: ${SUB_TYPE})..."
+# Write subscription.yaml
+log_msg "Handle subscription (type: ${SUB_TYPE})..."
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 
 if [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ -z "${SUB_URL}" ] && [ -z "${SUB_PATH}" ]; then
-    log_msg "复用现有 subscription.yaml"
+    log_msg "Keep existing subscription.yaml"
 elif [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ "${SUB_TYPE}" = "none" ]; then
-    log_msg "复用现有 subscription.yaml（向导未指定订阅）"
+    log_msg "Keep existing subscription.yaml"
 else
     case "${SUB_TYPE}" in
     remote)
         if [ -n "${SUB_URL}" ]; then
-            log_msg "下载远程订阅: ${SUB_URL}"
+            log_msg "Download remote subscription: ${SUB_URL}"
             if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}"; then
-                log_msg "远程订阅下载成功"
+                log_msg "Subscription downloaded"
             else
-                log_msg "警告: 远程订阅下载失败，使用空订阅占位"
+                log_msg "Download failed, use empty"
                 cat > "${SUB_FILE}" << 'EMPTYEOF'
 proxies: []
 proxy-groups:
@@ -166,7 +156,6 @@ rules:
 EMPTYEOF
             fi
         else
-            log_msg "远程订阅 URL 为空，使用空订阅占位"
             cat > "${SUB_FILE}" << 'EMPTYEOF'
 proxies: []
 proxy-groups:
@@ -181,10 +170,9 @@ EMPTYEOF
         ;;
     local)
         if [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
-            log_msg "复制本地订阅: ${SUB_PATH}"
+            log_msg "Copy local subscription: ${SUB_PATH}"
             cp -f "${SUB_PATH}" "${SUB_FILE}"
         else
-            log_msg "警告: 本地订阅文件不存在，使用空订阅占位"
             cat > "${SUB_FILE}" << 'EMPTYEOF'
 proxies: []
 proxy-groups:
@@ -198,9 +186,7 @@ EMPTYEOF
         fi
         ;;
     *)
-        log_msg "不使用订阅，使用占位"
         cat > "${SUB_FILE}" << 'EMPTYEOF'
-# 未配置订阅
 proxies: []
 proxy-groups:
   - name: PROXY
@@ -216,14 +202,14 @@ fi
 
 chmod 666 "${SUB_FILE}"
 
-# 拼接主配置
-log_msg "生成主配置 config.yaml..."
+# Merge configs
+log_msg "Generate config.yaml..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
 chmod 666 "${VAR_DIR}/config.yaml"
-log_msg "主配置已生成"
+log_msg "config.yaml generated"
 
-# 写入 settings.conf
+# Write settings.conf
 mkdir -p "${TRIM_PKGETC}"
 {
     echo "wizard_proxy_user=${PROXY_USER}"
@@ -237,8 +223,8 @@ mkdir -p "${TRIM_PKGETC}"
     echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
 } > "${TRIM_PKGETC}/settings.conf"
 
-# 写入刷新守护进程配置
-log_msg "写入订阅刷新守护进程配置..."
+# Write refresh daemon config
+log_msg "Write refresh daemon config..."
 {
     echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
     echo "SUBSCRIPTION_URL=${SUB_URL}"
@@ -246,7 +232,7 @@ log_msg "写入订阅刷新守护进程配置..."
     echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
 } > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
-log_msg "守护进程配置已写入 (interval=${REFRESH_INTERVAL_SEC}s)"
+log_msg "Refresh config written (interval=${REFRESH_INTERVAL_SEC}s)"
 
-log_msg "安装完成!"
+log_msg "Install complete!"
 exit 0

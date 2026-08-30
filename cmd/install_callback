@@ -12,15 +12,15 @@ VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
 
 # 向导变量
-USERNAME="${wizard_username:-}"
-PASSWORD="${wizard_password:-}"
+PROXY_USER="${wizard_proxy_user:-}"
+PROXY_PASS="${wizard_proxy_pass:-}"
+SECRET="${wizard_secret:-}"
 HTTP_PORT="${wizard_http_port:-7890}"
 API_PORT="${wizard_api_port:-9090}"
 SUB_TYPE="${wizard_sub_type:-none}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
-# 把小时转成秒
 if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
     REFRESH_INTERVAL_SEC=0
 else
@@ -60,26 +60,34 @@ cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null || tru
 cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null || true
 log_msg "控制面板复制完成"
 
-# 复制桌面入口配置和图标
+# 复制桌面入口配置、图标和 index.html
 log_msg "复制桌面入口配置和图标..."
 mkdir -p "${UI_TARGET}/images"
 cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
+cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html" 2>/dev/null || true
 cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
-cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html"
-cp -f "${APP_DEST}/ui/select.html" "${UI_TARGET}/select.html" 2>/dev/null || true
 chmod 666 "${UI_TARGET}/config"
 log_msg "桌面入口配置和图标复制完成"
 
-# 构建 authentication 配置
+# 构建 authentication 配置（代理用户验证）
 AUTH_BLOCK=""
-if [ -n "${USERNAME}" ] && [ -n "${PASSWORD}" ]; then
-    AUTH_BLOCK="# 用户验证
+if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+    AUTH_BLOCK="# 代理用户验证（HTTP/SOCKS5/Mixed 连接验证）
 authentication:
-  - \"${USERNAME}:${PASSWORD}\""
-    log_msg "已启用用户验证: ${USERNAME}"
+  - \"${PROXY_USER}:${PROXY_PASS}\""
+    log_msg "已启用代理用户验证: ${PROXY_USER}"
 else
-    AUTH_BLOCK="# 用户验证（未配置）"
-    log_msg "未设置用户验证"
+    AUTH_BLOCK="# 代理用户验证（未配置）"
+    log_msg "未设置代理用户验证"
+fi
+
+# 构建 secret 配置（控制面板密钥）
+if [ -n "${SECRET}" ]; then
+    SECRET_LINE="secret: \"${SECRET}\""
+    log_msg "已设置控制面板密钥"
+else
+    SECRET_LINE="secret: \"\""
+    log_msg "未设置控制面板密钥"
 fi
 
 # 写入 base.yaml
@@ -100,8 +108,8 @@ else
         echo "# 控制面板"
         echo "external-controller: 127.0.0.1:${API_PORT}"
         echo "external-ui: ${UI_TARGET}"
-        echo "external-ui-name: \"\""
-        echo "secret: \"\""
+        echo "external-ui-name: \"/ui\""
+        echo "${SECRET_LINE}"
         echo ""
         echo "${AUTH_BLOCK}"
         echo ""
@@ -219,8 +227,9 @@ log_msg "主配置已生成"
 # 写入 settings.conf
 mkdir -p "${TRIM_PKGETC}"
 {
-    echo "wizard_username=${USERNAME}"
-    echo "wizard_password=${PASSWORD}"
+    echo "wizard_proxy_user=${PROXY_USER}"
+    echo "wizard_proxy_pass=${PROXY_PASS}"
+    echo "wizard_secret=${SECRET}"
     echo "wizard_http_port=${HTTP_PORT}"
     echo "wizard_api_port=${API_PORT}"
     echo "wizard_sub_type=${SUB_TYPE}"
@@ -242,7 +251,3 @@ log_msg "守护进程配置已写入 (interval=${REFRESH_INTERVAL_SEC}s)"
 
 log_msg "安装完成!"
 exit 0
-
-
-
-

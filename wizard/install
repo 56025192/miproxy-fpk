@@ -9,31 +9,52 @@
     ]
   },
   {
+    "stepTitle": "控制面板",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "选择要安装的控制面板。Zashboard 功能更丰富，MetaCubeXD 更轻量。"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_dashboard",
+        "label": "选择控制面板",
+        "defaultValue": "zashboard",
+        "options": [
+          {
+            "value": "zashboard",
+            "label": "Zashboard（推荐）— 现代化界面，功能丰富"
+          },
+          {
+            "value": "metacubexd",
+            "label": "MetaCubeXD — 经典 Clash 风格，轻量稳定"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "stepTitle": "代理用户验证",
     "items": [
       {
         "type": "tips",
-        "helpText": "设置 HTTP/SOCKS5/Mixed 代理连接的用户名和密码。客户端连接代理时需要验证。"
+        "helpText": "设置 HTTP/SOCKS5/Mixed 代理连接的用户名和密码。"
       },
       {
         "type": "text",
         "field": "wizard_proxy_user",
         "label": "代理用户名",
         "initValue": "",
-        "placeholder": "留空则不启用代理验证",
-        "rules": [
-          { "min": 0, "message": "" }
-        ]
+        "placeholder": "留空则不启用",
+        "rules": []
       },
       {
         "type": "text",
         "field": "wizard_proxy_pass",
         "label": "代理密码",
         "initValue": "",
-        "placeholder": "留空则不启用代理验证",
-        "rules": [
-          { "min": 0, "message": "" }
-        ]
+        "placeholder": "留空则不启用",
+        "rules": []
       }
     ]
   },
@@ -42,17 +63,15 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "设置控制面板（Dashboard）的访问密钥。用于 API 调用时的身份验证。"
+        "helpText": "设置控制面板的访问密钥。"
       },
       {
         "type": "text",
         "field": "wizard_secret",
         "label": "面板密钥",
         "initValue": "",
-        "placeholder": "留空则不启用密钥验证",
-        "rules": [
-          { "min": 0, "message": "" }
-        ]
+        "placeholder": "留空则不启用",
+        "rules": []
       }
     ]
   },
@@ -61,7 +80,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "配置代理节点订阅。可选择远程 URL 或本地文件，订阅将自动更新。"
+        "helpText": "配置代理节点订阅。"
       },
       {
         "type": "radio",
@@ -69,31 +88,47 @@
         "label": "订阅类型",
         "defaultValue": "none",
         "options": [
-          { "value": "none", "label": "暂不配置订阅" },
-          { "value": "remote", "label": "远程订阅 URL" },
-          { "value": "local", "label": "本地订阅文件" }
+          {
+            "value": "none",
+            "label": "暂不配置订阅"
+          },
+          {
+            "value": "remote",
+            "label": "远程订阅 URL"
+          },
+          {
+            "value": "local",
+            "label": "本地订阅文件"
+          }
         ],
-        "rules": [{ "required": true, "message": "请选择订阅类型" }]
+        "rules": [
+          {
+            "required": true,
+            "message": "请选择订阅类型"
+          }
+        ]
       },
       {
         "type": "text",
         "field": "wizard_sub_url",
         "label": "订阅 URL",
         "initValue": "",
-        "rules": [
-          { "pattern": "^https?://.*|^$", "message": "请输入正确的订阅 URL" }
-        ],
-        "visibleIf": { "field": "wizard_sub_type", "value": "remote" }
+        "rules": [],
+        "visibleIf": {
+          "field": "wizard_sub_type",
+          "value": "remote"
+        }
       },
       {
         "type": "text",
         "field": "wizard_sub_path",
         "label": "本地订阅文件",
         "initValue": "/vol1/@appshare/miproxy/sub.yaml",
-        "rules": [
-          { "min": 0, "message": "请输入订阅文件路径" }
-        ],
-        "visibleIf": { "field": "wizard_sub_type", "value": "local" }
+        "rules": [],
+        "visibleIf": {
+          "field": "wizard_sub_type",
+          "value": "local"
+        }
       }
     ]
   },
@@ -102,7 +137,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "设置订阅自动刷新间隔。关闭后仅在手动保存设置时刷新。"
+        "helpText": "设置订阅自动刷新间隔。"
       },
       {
         "type": "radio",
@@ -110,13 +145,33 @@
         "label": "刷新间隔",
         "defaultValue": "6",
         "options": [
-          { "value": "0",  "label": "关闭自动刷新" },
-          { "value": "1",  "label": "每 1 小时" },
-          { "value": "6",  "label": "每 6 小时（推荐）" },
-          { "value": "12", "label": "每 12 小时" },
-          { "value": "24", "label": "每 24 小时" }
+          {
+            "value": "0",
+            "label": "关闭自动刷新"
+          },
+          {
+            "value": "1",
+            "label": "每 1 小时"
+          },
+          {
+            "value": "6",
+            "label": "每 6 小时（推荐）"
+          },
+          {
+            "value": "12",
+            "label": "每 12 小时"
+          },
+          {
+            "value": "24",
+            "label": "每 24 小时"
+          }
         ],
-        "rules": [{ "required": true, "message": "请选择刷新间隔" }]
+        "rules": [
+          {
+            "required": true,
+            "message": "请选择刷新间隔"
+          }
+        ]
       }
     ]
   }

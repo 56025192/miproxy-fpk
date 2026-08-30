@@ -29,6 +29,26 @@
     ]
   },
   {
+    "stepTitle": "控制面板",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "选择桌面入口打开的控制面板。切换后下次点击桌面图标会打开新选择的面板。"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_panel",
+        "label": "默认面板",
+        "defaultValue": "zashboard",
+        "options": [
+          { "value": "zashboard", "label": "Zashboard（推荐）— 现代化界面，功能丰富" },
+          { "value": "metacubexd", "label": "MetaCubeXD — 经典风格，轻量稳定" }
+        ],
+        "rules": [{ "required": true, "message": "请选择控制面板" }]
+      }
+    ]
+  },
+  {
     "stepTitle": "订阅管理",
     "items": [
       {
@@ -74,7 +94,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/\n\n📄 主配置: config.yaml\n📄 订阅: subscription.yaml\n📄 日志: info.log\n\n🎯 桌面入口点击后选择控制面板打开\n   - Zashboard（推荐）\n   - MetaCubeXD\n\n版本: v2.5.1 | MiProxy"
+        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/\n\n📄 主配置: config.yaml\n📄 订阅: subscription.yaml\n📄 日志: info.log\n\n版本: v2.5.5 | MiProxy"
       }
     ]
   }

@@ -9,28 +9,47 @@
     ]
   },
   {
-    "stepTitle": "用户验证",
+    "stepTitle": "代理用户验证",
     "items": [
       {
         "type": "tips",
-        "helpText": "设置面板访问的用户名和密码。不设置则无需验证即可访问控制面板。"
+        "helpText": "设置 HTTP/SOCKS5/Mixed 代理连接的用户名和密码。客户端连接代理时需要验证。"
       },
       {
         "type": "text",
-        "field": "wizard_username",
-        "label": "用户名",
+        "field": "wizard_proxy_user",
+        "label": "代理用户名",
         "initValue": "",
-        "placeholder": "留空则不启用验证",
+        "placeholder": "留空则不启用代理验证",
         "rules": [
           { "min": 0, "message": "" }
         ]
       },
       {
         "type": "text",
-        "field": "wizard_password",
-        "label": "密码",
+        "field": "wizard_proxy_pass",
+        "label": "代理密码",
         "initValue": "",
-        "placeholder": "留空则不启用验证",
+        "placeholder": "留空则不启用代理验证",
+        "rules": [
+          { "min": 0, "message": "" }
+        ]
+      }
+    ]
+  },
+  {
+    "stepTitle": "控制面板密钥",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "设置控制面板（Dashboard）的访问密钥。用于 API 调用时的身份验证。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_secret",
+        "label": "面板密钥",
+        "initValue": "",
+        "placeholder": "留空则不启用密钥验证",
         "rules": [
           { "min": 0, "message": "" }
         ]

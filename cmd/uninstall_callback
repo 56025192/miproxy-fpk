@@ -1,76 +1,41 @@
 #!/bin/bash
 
-# MiProxy 卸载后回调
-# 职责：根据用户选择保留或彻底删除所有 miproxy 相关文件
-# 注意：不用 set -e，所有清理操作加 || true 兜底
+# MiProxy uninstall callback
 
-DATA_ACTION="${wizard_data_action:-keep}"
-LOG_FILE="/tmp/miproxy_uninstall.log"
-exec >>"${LOG_FILE}" 2>&1
+set -e
 
-echo ""
-echo "=========================================="
-echo "$(date '+%Y-%m-%d %H:%M:%S') uninstall_callback: 用户选择=${DATA_ACTION}"
-echo "=========================================="
+VAR_DIR="${TRIM_PKGVAR}"
+LOG_FILE="${VAR_DIR}/info.log"
+PID_FILE="${VAR_DIR}/app.pid"
+REFRESH_PID_FILE="${VAR_DIR}/refresh_subscription.pid"
 
-# 收集需要清理的路径
-CLEAN_PATHS=(
-    "${TRIM_PKGVAR}"
-    "${TRIM_PKGETC}"
-    "/vol1/@apphome/miproxy"
-    "/vol1/@appcenter/miproxy"
-    "/var/apps/miproxy"
-    "/tmp/appcenter/miproxy"
-)
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
 
-# 添加数据共享目录
-if [ -n "${TRIM_DATA_SHARE_PATHS}" ]; then
-    IFS=':' read -ra SHARES <<< "${TRIM_DATA_SHARE_PATHS}"
-    for share in "${SHARES[@]}"; do
-        CLEAN_PATHS+=("${share}")
-    done
+# Stop refresh daemon
+if [ -f "${REFRESH_PID_FILE}" ]; then
+    pid=$(head -n 1 "${REFRESH_PID_FILE}" | tr -d '[:space:]')
+    if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        kill -9 "${pid}" 2>/dev/null || true
+    fi
+    rm -f "${REFRESH_PID_FILE}"
 fi
 
-if [ "${DATA_ACTION}" = "delete" ]; then
-    echo "完整删除模式：清理所有 miproxy 残留..."
-
-    for path in "${CLEAN_PATHS[@]}"; do
-        if [ -e "${path}" ]; then
-            if rm -rf "${path}" 2>/dev/null; then
-                echo "已删除: ${path}"
-            else
-                echo "删除失败: ${path}"
-            fi
-        fi
-    done
-
-    # 清理 appcenter 数据库记录
-    if command -v psql >/dev/null 2>&1; then
-        if PGPASSWORD="" psql -U postgres -d appcenter -c "DELETE FROM app WHERE app_name='miproxy';" >/dev/null 2>&1; then
-            echo "已清理 appcenter 数据库"
-        else
-            echo "appcenter 数据库清理失败（不影响卸载）"
-        fi
+# Stop miproxy
+if [ -f "${PID_FILE}" ]; then
+    pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+    if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        kill -TERM "${pid}" 2>/dev/null || true
+        sleep 1
+        kill -9 "${pid}" 2>/dev/null || true
     fi
-
-    # 最后再次确保无进程残留
-    REMAINING=$(pgrep -x mihomo 2>/dev/null || true)
-    if [ -n "${REMAINING}" ]; then
-        echo "卸载后发现残留进程: ${REMAINING}，最终杀掉"
-        pkill -KILL -x mihomo 2>/dev/null || true
-    fi
-
-    echo "完整删除完成"
-else
-    echo "保留数据模式：保留应用数据"
-    if [ -d "${TRIM_PKGVAR}" ]; then
-        cat > "${TRIM_PKGVAR}/.preserved" 2>/dev/null << EOF
-# 此目录由 miproxy 卸载时保留
-# 上次卸载时间: $(date '+%Y-%m-%d %H:%M:%S')
-# 重新安装 miproxy 将自动复用此目录中的配置和订阅
-EOF
-        echo "已标记保留目录: ${TRIM_PKGVAR}"
-    fi
+    rm -f "${PID_FILE}"
 fi
 
+# Clean up socket
+SOCKET_PATH="${TRIM_APPDEST}/miproxy.sock"
+rm -f "${SOCKET_PATH}"
+
+log_msg "Uninstall complete"
 exit 0

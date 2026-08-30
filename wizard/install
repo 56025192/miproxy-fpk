@@ -9,20 +9,30 @@
     ]
   },
   {
-    "stepTitle": "控制面板",
+    "stepTitle": "用户验证",
     "items": [
       {
         "type": "tips",
-        "helpText": "选择要安装的控制面板。Zashboard 功能更丰富，MetaCubeXD 更轻量。"
+        "helpText": "设置面板访问的用户名和密码。不设置则无需验证即可访问控制面板。"
       },
       {
-        "type": "radio",
-        "field": "wizard_dashboard",
-        "label": "选择控制面板",
-        "defaultValue": "zashboard",
-        "options": [
-          { "value": "zashboard", "label": "Zashboard（推荐）— 现代化界面，功能丰富，支持深色模式" },
-          { "value": "metacubexd", "label": "MetaCubeXD — 经典 Clash 风格界面，轻量稳定" }
+        "type": "text",
+        "field": "wizard_username",
+        "label": "用户名",
+        "initValue": "",
+        "placeholder": "留空则不启用验证",
+        "rules": [
+          { "min": 0, "message": "" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_password",
+        "label": "密码",
+        "initValue": "",
+        "placeholder": "留空则不启用验证",
+        "rules": [
+          { "min": 0, "message": "" }
         ]
       }
     ]

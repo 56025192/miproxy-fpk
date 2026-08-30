@@ -1,5 +1,7 @@
 #!/bin/bash
 
-### This script is called before the user change environment variables in application setting page.
+# MiProxy 配置变更前的初始化脚本
+
+echo "MiProxy config_init"
 
 exit 0

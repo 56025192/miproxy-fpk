@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# MiProxy install callback
-# Splits base config and subscription
+# MiProxy 安装完成后的回调脚本
+# 负责复制应用文件、生成配置文件、下载订阅等初始化工作
 
 set -e
 
@@ -10,7 +10,7 @@ TARGET_DIR="${TRIM_PKGVAR}/target"
 VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
 
-# Wizard variables
+# 向导变量（来自 wizard/install）
 PROXY_USER="${wizard_proxy_user:-}"
 PROXY_PASS="${wizard_proxy_pass:-}"
 SECRET="${wizard_secret:-}"
@@ -34,63 +34,63 @@ mkdir -p "${TARGET_DIR}"
 mkdir -p "${VAR_DIR}"
 mkdir -p "${UI_TARGET}"
 
-# Check preserved data
+# 检查是否保留数据（升级场景）
 PRESERVED_FLAG="${VAR_DIR}/.preserved"
 if [ -f "${PRESERVED_FLAG}" ]; then
-    log_msg "Detected preserved data"
+    log_msg "检测到保留数据"
     PRESERVED=1
     rm -f "${PRESERVED_FLAG}"
 else
     PRESERVED=0
 fi
 
-# Copy mihomo binary
-log_msg "Copy mihomo binary..."
+# 复制 mihomo 二进制文件
+log_msg "复制 mihomo 二进制..."
 cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
 chmod +x "${TARGET_DIR}/mihomo"
-log_msg "mihomo binary copied"
+log_msg "mihomo 二进制已复制"
 
-# Copy both panels
-log_msg "Copy control panels..."
+# 复制控制面板
+log_msg "复制控制面板..."
 mkdir -p "${UI_TARGET}/zashboard"
 mkdir -p "${UI_TARGET}/metacubexd"
 cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null || true
 cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null || true
-log_msg "Panels copied"
+log_msg "控制面板已复制"
 
-# Copy config and icons
-log_msg "Copy config and icons..."
+# 复制配置和图标
+log_msg "复制配置和图标..."
 mkdir -p "${UI_TARGET}/images"
 cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
 cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html" 2>/dev/null || true
 cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
 chmod 666 "${UI_TARGET}/config"
-log_msg "Config and icons copied"
+log_msg "配置和图标已复制"
 
-# Build authentication config
+# 构建认证配置
 AUTH_CONFIG=""
 if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
     AUTH_CONFIG="authentication:
   - \"${PROXY_USER}:${PROXY_PASS}\""
-    log_msg "Proxy auth enabled: ${PROXY_USER}"
+    log_msg "代理认证已启用: ${PROXY_USER}"
 else
-    log_msg "Proxy auth disabled"
+    log_msg "代理认证已禁用"
 fi
 
-# Build secret config
+# 构建密钥配置
 if [ -n "${SECRET}" ]; then
     SECRET_CONFIG="secret: \"${SECRET}\""
-    log_msg "Panel secret enabled"
+    log_msg "面板密钥已启用"
 else
     SECRET_CONFIG="secret: \"\""
-    log_msg "Panel secret disabled"
+    log_msg "面板密钥已禁用"
 fi
 
-# Write base.yaml
+# 写入基础配置
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
-    log_msg "Keep existing base.yaml"
+    log_msg "保留现有 base.yaml"
 else
-    log_msg "Write base.yaml..."
+    log_msg "写入 base.yaml..."
 cat > "${VAR_DIR}/base.yaml" << EOF
 mixed-port: ${HTTP_PORT}
 allow-lan: true
@@ -117,33 +117,33 @@ geodata-mode: true
 EOF
 fi
 
-# Copy GEO databases
+# 复制 GEO 数据库
 if [ -d "${APP_DEST}/data" ]; then
-    log_msg "Copy GEO databases..."
+    log_msg "复制 GEO 数据库..."
     cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"
     cp -f "${APP_DEST}/data/geosite.dat" "${VAR_DIR}/geosite.dat"
     cp -f "${APP_DEST}/data/Country.mmdb" "${VAR_DIR}/Country.mmdb"
     chmod 666 "${VAR_DIR}/geoip.dat" "${VAR_DIR}/geosite.dat" "${VAR_DIR}/Country.mmdb"
-    log_msg "GEO databases copied"
+    log_msg "GEO 数据库已复制"
 fi
 
-# Write subscription.yaml
-log_msg "Handle subscription (type: ${SUB_TYPE})..."
+# 处理订阅配置
+log_msg "处理订阅配置 (类型: ${SUB_TYPE})..."
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 
 if [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ -z "${SUB_URL}" ] && [ -z "${SUB_PATH}" ]; then
-    log_msg "Keep existing subscription.yaml"
+    log_msg "保留现有订阅配置"
 elif [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ "${SUB_TYPE}" = "none" ]; then
-    log_msg "Keep existing subscription.yaml"
+    log_msg "保留现有订阅配置"
 else
     case "${SUB_TYPE}" in
     remote)
         if [ -n "${SUB_URL}" ]; then
-            log_msg "Download remote subscription: ${SUB_URL}"
+            log_msg "下载远程订阅: ${SUB_URL}"
             if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}"; then
-                log_msg "Subscription downloaded"
+                log_msg "订阅下载成功"
             else
-                log_msg "Download failed, use empty"
+                log_msg "订阅下载失败，使用空配置"
                 cat > "${SUB_FILE}" << 'EMPTYEOF'
 proxies: []
 proxy-groups:
@@ -170,7 +170,7 @@ EMPTYEOF
         ;;
     local)
         if [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
-            log_msg "Copy local subscription: ${SUB_PATH}"
+            log_msg "复制本地订阅: ${SUB_PATH}"
             cp -f "${SUB_PATH}" "${SUB_FILE}"
         else
             cat > "${SUB_FILE}" << 'EMPTYEOF'
@@ -202,14 +202,14 @@ fi
 
 chmod 666 "${SUB_FILE}"
 
-# Merge configs
-log_msg "Generate config.yaml..."
+# 合并配置
+log_msg "生成 config.yaml..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
 chmod 666 "${VAR_DIR}/config.yaml"
-log_msg "config.yaml generated"
+log_msg "config.yaml 已生成"
 
-# Write settings.conf
+# 写入设置文件
 mkdir -p "${TRIM_PKGETC}"
 {
     echo "wizard_proxy_user=${PROXY_USER}"
@@ -223,8 +223,8 @@ mkdir -p "${TRIM_PKGETC}"
     echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
 } > "${TRIM_PKGETC}/settings.conf"
 
-# Write refresh daemon config
-log_msg "Write refresh daemon config..."
+# 写入订阅刷新守护进程配置
+log_msg "写入订阅刷新守护进程配置..."
 {
     echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
     echo "SUBSCRIPTION_URL=${SUB_URL}"
@@ -232,7 +232,7 @@ log_msg "Write refresh daemon config..."
     echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
 } > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
-log_msg "Refresh config written (interval=${REFRESH_INTERVAL_SEC}s)"
+log_msg "订阅刷新配置已写入 (间隔=${REFRESH_INTERVAL_SEC}秒)"
 
-log_msg "Install complete!"
+log_msg "安装完成!"
 exit 0

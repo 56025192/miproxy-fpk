@@ -1,23 +1,13 @@
 {
   ".url": {
-    "miproxy.zashboard": {
-      "title": "MiProxy - Zashboard",
-      "desc": "mihomo 代理核心 - 现代化界面",
+    "miproxy.dashboard": {
+      "title": "MiProxy 控制面板",
+      "desc": "mihomo 代理核心，点击选择控制面板",
       "icon": "images/icon_{0}.png",
       "type": "iframe",
       "protocol": "http",
       "port": "9090",
-      "url": "/ui/zashboard/",
-      "allUsers": true
-    },
-    "miproxy.metacubexd": {
-      "title": "MiProxy - MetaCubeXD",
-      "desc": "mihomo 代理核心 - 经典风格",
-      "icon": "images/icon_{0}.png",
-      "type": "iframe",
-      "protocol": "http",
-      "port": "9090",
-      "url": "/ui/metacubexd/",
+      "url": "/ui/select.html",
       "allUsers": true
     }
   }

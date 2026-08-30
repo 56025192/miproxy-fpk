@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# MiProxy 配置变更回调
+# MiProxy config callback
 
 set -e
 
@@ -25,45 +25,41 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
-log_msg "config_callback: 收到配置更新请求"
+log_msg "config_callback: received config update request"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NEED_RESTART=0
 
-# === 处理 base.yaml 更新 ===
+# Update base.yaml
 if [ -f "${VAR_DIR}/base.yaml" ]; then
-    # 更新 secret
     sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
     
-    # 更新 authentication
     if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
-        # 移除旧的 authentication
         sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
         sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        # 添加新的 authentication
         sed -i "/^secret:/a\\
 authentication:\\
   - \"${PROXY_USER}:${PROXY_PASS}\"" "${VAR_DIR}/base.yaml"
-        log_msg "已更新代理用户验证: ${PROXY_USER}"
+        log_msg "Updated proxy auth: ${PROXY_USER}"
         NEED_RESTART=1
     fi
 fi
 
-# === 处理订阅更新 ===
+# Handle subscription update
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 
 if [ -n "${SUB_URL}" ]; then
-    log_msg "下载远程订阅: ${SUB_URL}"
+    log_msg "Download remote subscription: ${SUB_URL}"
     if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp"; then
         mv "${SUB_FILE}.tmp" "${SUB_FILE}"
-        log_msg "远程订阅更新成功"
+        log_msg "Subscription updated"
         chmod 666 "${SUB_FILE}"
         NEED_RESTART=1
     else
         rm -f "${SUB_FILE}.tmp"
-        log_msg "远程订阅下载失败"
-        echo "远程订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        log_msg "Download failed"
+        echo "Download failed" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
         exit 1
     fi
 elif [ -n "${SUB_PATH}" ]; then
@@ -71,31 +67,31 @@ elif [ -n "${SUB_PATH}" ]; then
         if [ "${SUB_PATH}" != "${SUB_FILE}" ]; then
             cp -f "${SUB_PATH}" "${SUB_FILE}"
             chmod 666 "${SUB_FILE}"
-            log_msg "复制本地订阅: ${SUB_PATH}"
+            log_msg "Copied local subscription: ${SUB_PATH}"
             NEED_RESTART=1
         fi
     else
-        log_msg "本地订阅文件不存在: ${SUB_PATH}"
-        echo "本地订阅文件不存在" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        log_msg "Local subscription not found: ${SUB_PATH}"
+        echo "Local subscription not found" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
         exit 1
     fi
 fi
 
-# === 重新生成主配置 ===
+# Regenerate main config
 if [ "${NEED_RESTART}" = "1" ]; then
-    log_msg "重新生成主配置 config.yaml..."
+    log_msg "Regenerate config.yaml..."
     python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
     chmod 666 "${VAR_DIR}/config.yaml"
 
-    log_msg "重启 miproxy..."
+    log_msg "Restart miproxy..."
     bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
     sleep 2
     bash "${SCRIPT_DIR}/main" start
-    log_msg "miproxy 重启完成"
+    log_msg "miproxy restarted"
 fi
 
-# === 更新守护进程配置 ===
-log_msg "更新订阅刷新守护进程配置..."
+# Update refresh daemon config
+log_msg "Update refresh daemon config..."
 if [ -n "${SUB_URL}" ]; then
     CURRENT_SUB_TYPE="remote"
 elif [ -n "${SUB_PATH}" ]; then
@@ -112,6 +108,6 @@ fi
 } > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
 
-bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "守护进程重启失败"
+bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "Refresh daemon restart failed"
 
 exit 0

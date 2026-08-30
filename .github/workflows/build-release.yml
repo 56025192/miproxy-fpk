@@ -101,7 +101,7 @@ jobs:
       - name: 下载 fnpack
         run: |
           echo "📦 下载 fnpack..."
-          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
           chmod +x /tmp/fnpack
           echo "✅ fnpack 下载完成"
 
@@ -129,7 +129,7 @@ jobs:
         id: build-x86
         run: |
           echo "🔨 开始打包 x86_64..."
-          /tmp/fnpack build --directory . 2>&1
+          pwd; /tmp/fnpack build --directory . 2>&1
           
           FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then
@@ -173,7 +173,7 @@ jobs:
       - name: 下载 fnpack
         run: |
           echo "📦 下载 fnpack..."
-          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
           chmod +x /tmp/fnpack
           echo "✅ fnpack 下载完成"
 
@@ -201,7 +201,7 @@ jobs:
         id: build-arm
         run: |
           echo "🔨 开始打包 ARM64..."
-          /tmp/fnpack build --directory . 2>&1
+          pwd; /tmp/fnpack build --directory . 2>&1
           
           FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then

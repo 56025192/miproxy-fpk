@@ -16,7 +16,7 @@ ctl_stop              = true
 startup               = true
 service_port          = 9090
 desktop_uidir         = ui
-desktop_applaunchname = miproxy.dashboard
+
 
 
 

@@ -1,5 +1,7 @@
 #!/bin/bash
 
-### This script is called before the user installs the application.
+# MiProxy 安装前的初始化脚本
+
+echo "MiProxy install_init"
 
 exit 0

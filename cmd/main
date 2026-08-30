@@ -5,13 +5,15 @@ PID_FILE="${TRIM_PKGVAR}/app.pid"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_subscription.pid"
 REFRESH_CONF="${TRIM_PKGVAR}/refresh_subscription.conf"
 
-# MiProxy 核心路径（TRIM_PKGVAR 就是 var 目录）
+# MiProxy 核心路径
 MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
-MIHOMO_DIR="${TRIM_PKGVAR}/target"
+# 工作目录应该是 var 目录，不是 target 目录（mihomo 会从这里找 geoip.dat 等）
+MIHOMO_DIR="${TRIM_PKGVAR}"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 
-# 关键：必须用绝对路径，-f 的相对路径在某些情况下找不到
-CMD="${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}"
+# 关键：必须用绝对路径
+# 使用 nohup 确保进程不被 SIGHUP 影响
+CMD="nohup ${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}"
 
 # 守护进程脚本路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,20 +25,17 @@ log_msg() {
 # ============ 订阅刷新守护进程管理 ============
 
 start_refresh_daemon() {
-    # 检查守护进程配置
     if [ ! -f "${REFRESH_CONF}" ]; then
         log_msg "守护进程配置不存在，跳过"
         return 1
     fi
 
-    # 读配置
     local sub_type sub_url sub_path interval
     sub_type=$(grep -E "^SUBSCRIPTION_TYPE=" "${REFRESH_CONF}" | cut -d= -f2)
     sub_url=$(grep -E "^SUBSCRIPTION_URL=" "${REFRESH_CONF}" | cut -d= -f2)
     sub_path=$(grep -E "^SUBSCRIPTION_PATH=" "${REFRESH_CONF}" | cut -d= -f2)
     interval=$(grep -E "^REFRESH_INTERVAL=" "${REFRESH_CONF}" | cut -d= -f2)
 
-    # 禁用或无订阅源
     if [ "${interval}" = "0" ] || [ -z "${interval}" ]; then
         log_msg "守护进程禁用（interval=${interval}）"
         return 0
@@ -46,13 +45,11 @@ start_refresh_daemon() {
         return 0
     fi
 
-    # 守护进程脚本是否存在
     if [ ! -f "${SCRIPT_DIR}/refresh_subscription_loop.sh" ]; then
-        log_msg "守护进程脚本不存在: ${SCRIPT_DIR}/refresh_subscription_loop.sh"
+        log_msg "守护进程脚本不存在"
         return 1
     fi
 
-    # 已经在跑就不重复启动
     if [ -f "${REFRESH_PID_FILE}" ]; then
         local existing_pid
         existing_pid=$(head -n 1 "${REFRESH_PID_FILE}" | tr -d '[:space:]')
@@ -64,16 +61,8 @@ start_refresh_daemon() {
     fi
 
     log_msg "启动订阅刷新守护进程 (interval=${interval}s, type=${sub_type})..."
-    # setsid 让守护进程脱离父进程组，不会被 main stop 的 TERM 误杀
-    setsid env \
-        SUBSCRIPTION_URL="${sub_url}" \
-        SUBSCRIPTION_PATH="${sub_path}" \
-        REFRESH_INTERVAL="${interval}" \
-        VAR_DIR="${TRIM_PKGVAR}" \
-        SCRIPT_DIR="${SCRIPT_DIR}" \
-        bash "${SCRIPT_DIR}/refresh_subscription_loop.sh" >> "${TRIM_PKGVAR}/subscription_refresh.log" 2>&1 < /dev/null &
+    nohup bash "${SCRIPT_DIR}/refresh_subscription_loop.sh" >> "${TRIM_PKGVAR}/subscription_refresh.log" 2>&1 &
     disown 2>/dev/null || true
-    # 等守护进程写出 PID 文件
     sleep 1
     return 0
 }
@@ -98,7 +87,6 @@ stop_refresh_daemon() {
             count=$((count + 1))
         done
         if kill -0 "${pid}" 2>/dev/null; then
-            log_msg "守护进程未响应 TERM，发送 KILL"
             kill -KILL "${pid}" 2>/dev/null || true
         fi
     fi
@@ -106,7 +94,6 @@ stop_refresh_daemon() {
     return 0
 }
 
-# 只重启守护进程（不改 miproxy 状态），用于刷新间隔变更后
 restart_refresh_daemon() {
     log_msg "重启守护进程..."
     stop_refresh_daemon
@@ -119,27 +106,63 @@ restart_refresh_daemon() {
 
 start_process() {
     if status; then
+        log_msg "进程已在运行"
         return 0
     fi
 
-    log_msg "Starting process ..."
-    # run cmd to start process
-    bash -c "${CMD}" >> ${LOG_FILE} 2>&1 &
-    # write pid to pidfile
-    printf "%s" "$!" > ${PID_FILE}
-    return 0
+    log_msg "Starting process..."
+    log_msg "MIHOMO_BIN=${MIHOMO_BIN}"
+    log_msg "MIHOMO_DIR=${MIHOMO_DIR}"
+    log_msg "MIHOMO_CONFIG=${MIHOMO_CONFIG}"
+    
+    # 检查文件是否存在
+    if [ ! -f "${MIHOMO_BIN}" ]; then
+        log_msg "错误: mihomo 二进制文件不存在: ${MIHOMO_BIN}"
+        return 1
+    fi
+    if [ ! -f "${MIHOMO_CONFIG}" ]; then
+        log_msg "错误: 配置文件不存在: ${MIHOMO_CONFIG}"
+        return 1
+    fi
+    
+    # 启动 mihomo
+    cd "${MIHOMO_DIR}"
+    nohup ${MIHOMO_BIN} -d "${MIHOMO_DIR}" -f "${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
+    local pid=$!
+    printf "%s" "$pid" > ${PID_FILE}
+    log_msg "进程已启动 PID=${pid}"
+    
+    # 等待进程启动
+    sleep 2
+    
+    # 检查进程是否仍在运行
+    if kill -0 "${pid}" 2>/dev/null; then
+        log_msg "进程启动成功"
+        return 0
+    else
+        log_msg "错误: 进程启动失败"
+        rm -f ${PID_FILE}
+        return 1
+    fi
 }
 
 stop_process() {
-    log_msg "Stopping process ..."
+    log_msg "Stopping process..."
 
     if [ -r "${PID_FILE}" ]; then
+        local pid
         pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
 
-        log_msg "pid=${pid}"
-        if ! check_process "${pid}"; then
+        if [ -z "${pid}" ]; then
             rm -f "${PID_FILE}"
-            log_msg "remove pid file 1"
+            log_msg "PID 文件为空"
+            return
+        fi
+
+        log_msg "pid=${pid}"
+        if ! kill -0 "${pid}" 2>/dev/null; then
+            rm -f "${PID_FILE}"
+            log_msg "进程不存在"
             return
         fi
 
@@ -147,20 +170,21 @@ stop_process() {
         kill -TERM ${pid} >> ${LOG_FILE} 2>&1
 
         local count=0
-        while check_process "${pid}" && [ $count -lt 10 ]; do
+        while kill -0 "${pid}" 2>/dev/null && [ $count -lt 10 ]; do
             sleep 1
             count=$((count + 1))
             log_msg "waiting process terminal... (${count}s/10s)"
         done
 
-        if check_process "${pid}"; then
+        if kill -0 "${pid}" 2>/dev/null; then
             log_msg "send KILL signal to PID:${pid}..."
-            kill -KILL "${pid}"
+            kill -KILL "${pid}" 2>/dev/null || true
             sleep 1
-            rm -f "${PID_FILE}"
-        else
-            log_msg "process killed... "
         fi
+        rm -f "${PID_FILE}"
+        log_msg "process stopped"
+    else
+        log_msg "PID 文件不存在"
     fi
 
     return 0
@@ -177,18 +201,17 @@ check_process() {
 
 status() {
     if [ -f "${PID_FILE}" ]; then
+        local pid
         pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
-        if check_process "${pid}"; then
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
             return 0
         else
             rm -f "${PID_FILE}"
         fi
     fi
-
     return 1
 }
 
-# 完整启动：先停守护（避免它在我们停 miproxy 后又拉起），再起 miproxy，再起守护
 start_full() {
     stop_refresh_daemon
     sleep 1
@@ -197,7 +220,6 @@ start_full() {
     start_refresh_daemon
 }
 
-# 完整停止：先停守护（避免它在我们停 miproxy 后又拉起），再停 miproxy
 stop_full() {
     stop_refresh_daemon
     stop_process

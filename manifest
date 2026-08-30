@@ -1,28 +1,19 @@
-appname=miproxy
-version=2.6.9
-display_name=MiProxy
-desc=MiProxy - mihomo 代理核心控制面板，支持多种订阅格式
-source=thirdparty
-platform=all
-
-maintainer=56025192
-maintainer_url=https://github.com/56025192/miproxy-fpk
-
-os_min_version=4.1.6
-
-desktop_uidir=ui
-desktop_applaunchname=miproxy.APPLICATION
-
-ctl_stop=true
-checkport=false
-
-install=cmd/install_init
-installCallback=cmd/install_callback
-uninstall=cmd/uninstall_init
-uninstallCallback=cmd/uninstall_callback
-start=cmd/main
-stop=cmd/main
-restart=cmd/main
-upgrade=cmd/upgrade_init
-upgradeCallback=cmd/upgrade_callback
-config=cmd/config_init
+# MiProxy FPK Application Manifest
+# ================================
+appname               = miproxy
+version               = 2.6.9
+display_name          = MiProxy
+desc                  = <h3>MiProxy v2.6.9</h3><p>mihomo 代理核心，简洁高效的代理工具</p><ul><li>支持 VMess、VLess、Trojan、Shadowsocks、Hysteria2 等多种协议</li><li>内置 Zashboard / MetaCubeXD 双控制面板</li><li>订阅管理 + 自动刷新</li><li>局域网共享上网</li><li>离线 GEO 数据库，开箱即用</li></ul>
+platform              = all
+source                = thirdparty
+os_min_version        = 0.9.27
+maintainer            = 56025192
+maintainer_url        = https://github.com/56025192/miproxy-fpk
+distributor           = 小陈先生
+distributor_url       = https://gx3.cn
+install_type          = 
+ctl_stop              = true
+startup               = true
+service_port          = 9090
+desktop_uidir         = ui
+desktop_applaunchname = miproxy.dashboard

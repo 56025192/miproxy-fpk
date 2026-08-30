@@ -70,12 +70,14 @@ chmod 666 "${UI_TARGET}/config"
 log_msg "桌面入口配置和图标复制完成"
 
 # 构建 authentication 配置
-AUTH_LINE=""
+AUTH_BLOCK=""
 if [ -n "${USERNAME}" ] && [ -n "${PASSWORD}" ]; then
-    AUTH_LINE="authentication:"
-    AUTH_LINE="${AUTH_LINE}\n- \"${USERNAME}:${PASSWORD}\""
+    AUTH_BLOCK="# 用户验证
+authentication:
+  - \"${USERNAME}:${PASSWORD}\""
     log_msg "已启用用户验证: ${USERNAME}"
 else
+    AUTH_BLOCK="# 用户验证（未配置）"
     log_msg "未设置用户验证"
 fi
 
@@ -84,41 +86,40 @@ if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
     log_msg "复用现有 base.yaml"
 else
     log_msg "写入基础配置 base.yaml..."
-cat > "${VAR_DIR}/base.yaml" << EOF
-# MiProxy 基础配置（系统管理，请勿手动修改）
-# 订阅相关字段（proxies/proxy-groups/rules/proxy-providers）请在订阅文件中配置
-
-mixed-port: ${HTTP_PORT}
-allow-lan: true
-mode: rule
-log-level: info
-ipv6: false
-
-# 控制面板
-external-controller: 0.0.0.0:${API_PORT}
-external-ui: ${UI_TARGET}
-external-ui-name: ""
-secret: ""
-
-# 用户验证
-${AUTH_LINE}
-
-# 跨域允许
-external-controller-cors:
-  allow-private-network: true
-  allow-origins:
-    - "*"
-
-# TUN 默认关闭
-tun:
-  enable: false
-
-# GEO 数据库模式（避免 miproxy 启动时联网下载）
-geodata-mode: true
-EOF
+    {
+        echo "# MiProxy 基础配置（系统管理，请勿手动修改）"
+        echo "# 订阅相关字段（proxies/proxy-groups/rules/proxy-providers）请在订阅文件中配置"
+        echo ""
+        echo "mixed-port: ${HTTP_PORT}"
+        echo "allow-lan: true"
+        echo "mode: rule"
+        echo "log-level: info"
+        echo "ipv6: false"
+        echo ""
+        echo "# 控制面板"
+        echo "external-controller: 0.0.0.0:${API_PORT}"
+        echo "external-ui: ${UI_TARGET}"
+        echo "external-ui-name: \"\""
+        echo "secret: \"\""
+        echo ""
+        echo "${AUTH_BLOCK}"
+        echo ""
+        echo "# 跨域允许"
+        echo "external-controller-cors:"
+        echo "  allow-private-network: true"
+        echo "  allow-origins:"
+        echo "    - \"*\""
+        echo ""
+        echo "# TUN 默认关闭"
+        echo "tun:"
+        echo "  enable: false"
+        echo ""
+        echo "# GEO 数据库模式（避免 miproxy 启动时联网下载）"
+        echo "geodata-mode: true"
+    } > "${VAR_DIR}/base.yaml"
 fi
 
-# 复制离线 GEO 数据库（避免 miproxy 启动时联网下载）
+# 复制离线 GEO 数据库
 if [ -d "${APP_DEST}/data" ]; then
     log_msg "复制离线 GEO 数据库..."
     cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"
@@ -145,29 +146,29 @@ else
                 log_msg "远程订阅下载成功"
             else
                 log_msg "警告: 远程订阅下载失败，使用空订阅占位"
-                cat > "${SUB_FILE}" << 'EMPTYEOF'
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
+                {
+                    echo "proxies: []"
+                    echo "proxy-groups:"
+                    echo "  - name: PROXY"
+                    echo "    type: select"
+                    echo "    proxies:"
+                    echo "      - DIRECT"
+                    echo "rules:"
+                    echo "  - MATCH,PROXY"
+                } > "${SUB_FILE}"
             fi
         else
             log_msg "远程订阅 URL 为空，使用空订阅占位"
-            cat > "${SUB_FILE}" << 'EMPTYEOF'
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
+            {
+                echo "proxies: []"
+                echo "proxy-groups:"
+                echo "  - name: PROXY"
+                echo "    type: select"
+                echo "    proxies:"
+                echo "      - DIRECT"
+                echo "rules:"
+                echo "  - MATCH,PROXY"
+            } > "${SUB_FILE}"
         fi
         ;;
     local)
@@ -176,38 +177,38 @@ EMPTYEOF
             cp -f "${SUB_PATH}" "${SUB_FILE}"
         else
             log_msg "警告: 本地订阅文件不存在，使用空订阅占位"
-            cat > "${SUB_FILE}" << 'EMPTYEOF'
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
+            {
+                echo "proxies: []"
+                echo "proxy-groups:"
+                echo "  - name: PROXY"
+                echo "    type: select"
+                echo "    proxies:"
+                echo "      - DIRECT"
+                echo "rules:"
+                echo "  - MATCH,PROXY"
+            } > "${SUB_FILE}"
         fi
         ;;
     *)
         log_msg "不使用订阅，使用占位"
-        cat > "${SUB_FILE}" << 'EMPTYEOF'
-# 未配置订阅
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
+        {
+            echo "# 未配置订阅"
+            echo "proxies: []"
+            echo "proxy-groups:"
+            echo "  - name: PROXY"
+            echo "    type: select"
+            echo "    proxies:"
+            echo "      - DIRECT"
+            echo "rules:"
+            echo "  - MATCH,PROXY"
+        } > "${SUB_FILE}"
         ;;
     esac
 fi
 
 chmod 666 "${SUB_FILE}"
 
-# 拼接主配置 = base.yaml + subscription.yaml
+# 拼接主配置
 log_msg "生成主配置 config.yaml..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
@@ -216,25 +217,25 @@ log_msg "主配置已生成"
 
 # 写入 settings.conf
 mkdir -p "${TRIM_PKGETC}"
-cat > "${TRIM_PKGETC}/settings.conf" << EOF
-wizard_username=${USERNAME}
-wizard_password=${PASSWORD}
-wizard_http_port=${HTTP_PORT}
-wizard_api_port=${API_PORT}
-wizard_sub_type=${SUB_TYPE}
-wizard_sub_url=${SUB_URL}
-wizard_sub_path=${SUB_PATH}
-wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}
-EOF
+{
+    echo "wizard_username=${USERNAME}"
+    echo "wizard_password=${PASSWORD}"
+    echo "wizard_http_port=${HTTP_PORT}"
+    echo "wizard_api_port=${API_PORT}"
+    echo "wizard_sub_type=${SUB_TYPE}"
+    echo "wizard_sub_url=${SUB_URL}"
+    echo "wizard_sub_path=${SUB_PATH}"
+    echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
+} > "${TRIM_PKGETC}/settings.conf"
 
-# 写入刷新守护进程配置（让后台守护进程能读到订阅来源和间隔）
+# 写入刷新守护进程配置
 log_msg "写入订阅刷新守护进程配置..."
-cat > "${VAR_DIR}/refresh_subscription.conf" << EOF
-SUBSCRIPTION_TYPE=${SUB_TYPE}
-SUBSCRIPTION_URL=${SUB_URL}
-SUBSCRIPTION_PATH=${SUB_PATH}
-REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}
-EOF
+{
+    echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
+    echo "SUBSCRIPTION_URL=${SUB_URL}"
+    echo "SUBSCRIPTION_PATH=${SUB_PATH}"
+    echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
+} > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
 log_msg "守护进程配置已写入 (interval=${REFRESH_INTERVAL_SEC}s)"
 

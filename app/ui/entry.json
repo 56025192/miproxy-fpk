@@ -1,0 +1,12 @@
+{
+  ".desktop_entry": {
+    "miproxy.main": {
+      "title": "MiProxy 控制面板",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "http",
+      "gateway": true,
+      "url": "/app/miproxy/ui/zashboard/"
+    }
+  }
+}

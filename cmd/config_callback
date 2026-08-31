@@ -1,0 +1,139 @@
+#!/bin/bash
+
+# MiProxy 配置变更回调脚本
+# 飞牛 fnOS 在用户保存应用配置后调用
+# 负责更新配置文件、重启服务等
+
+set -e
+
+APP_DEST="${TRIM_APPDEST}"
+VAR_DIR="${TRIM_PKGVAR}"
+UI_TARGET="${VAR_DIR}/ui"
+LOG_FILE="${VAR_DIR}/info.log"
+
+PROXY_USER="${wizard_proxy_user:-}"
+PROXY_PASS="${wizard_proxy_pass:-}"
+SECRET="${wizard_secret:-}"
+SUB_URL="${wizard_sub_url:-}"
+SUB_PATH="${wizard_sub_path:-}"
+REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
+if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
+    REFRESH_INTERVAL_SEC=0
+else
+    REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
+fi
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+log_msg "config_callback: 收到配置更新请求"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+NEED_RESTART=0
+
+# 更新基础配置
+if [ -f "${VAR_DIR}/base.yaml" ]; then
+    # 处理 secret 字段
+    # 如果 SECRET 非空，则更新；否则删除 secret 行
+    if [ -n "${SECRET}" ]; then
+        # 如果 secret 行存在则更新，否则添加
+        if grep -q "^secret:" "${VAR_DIR}/base.yaml"; then
+            sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
+        else
+            echo "secret: \"${SECRET}\"" >> "${VAR_DIR}/base.yaml"
+        fi
+        log_msg "更新密钥"
+    else
+        # SECRET 为空时删除 secret 行
+        sed -i '/^secret:/d' "${VAR_DIR}/base.yaml"
+        log_msg "已清除密钥配置"
+    fi
+    
+    # 处理 authentication 配置
+    # 如果 PROXY_USER 和 PROXY_PASS 都非空，则添加/更新认证；否则删除整个认证部分
+    if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+        # 先删除现有的 authentication 部分（防止重复添加）
+        sed -i '/^authentication:/,/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        # 添加新的 authentication 配置
+        sed -i "/^secret:/a\\
+authentication:\\
+  - \"${PROXY_USER}:${PROXY_PASS}\"" "${VAR_DIR}/base.yaml"
+        log_msg "更新代理认证: ${PROXY_USER}"
+        NEED_RESTART=1
+    else
+        # PROXY_USER 或 PROXY_PASS 为空时，删除整个 authentication 部分
+        sed -i '/^authentication:/,/^[^ ]/{ /^authentication:/d; /^  - "/d; }' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        # 使用更简单的方式删除 authentication 行
+        sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        log_msg "已清除认证配置"
+    fi
+fi
+
+# 处理订阅更新
+SUB_FILE="${VAR_DIR}/subscription.yaml"
+
+if [ -n "${SUB_URL}" ]; then
+    log_msg "下载远程订阅: ${SUB_URL}"
+    if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp"; then
+        mv "${SUB_FILE}.tmp" "${SUB_FILE}"
+        log_msg "订阅已更新"
+        chmod 666 "${SUB_FILE}"
+        NEED_RESTART=1
+    else
+        rm -f "${SUB_FILE}.tmp"
+        log_msg "订阅下载失败"
+        echo "订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        exit 1
+    fi
+elif [ -n "${SUB_PATH}" ]; then
+    if [ -f "${SUB_PATH}" ]; then
+        if [ "${SUB_PATH}" != "${SUB_FILE}" ]; then
+            cp -f "${SUB_PATH}" "${SUB_FILE}"
+            chmod 666 "${SUB_FILE}"
+            log_msg "复制本地订阅: ${SUB_PATH}"
+            NEED_RESTART=1
+        fi
+    else
+        log_msg "本地订阅不存在: ${SUB_PATH}"
+        echo "本地订阅不存在" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        exit 1
+    fi
+fi
+
+# 重新生成主配置
+if [ "${NEED_RESTART}" = "1" ]; then
+    log_msg "重新生成 config.yaml..."
+    python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
+    chmod 666 "${VAR_DIR}/config.yaml"
+
+    log_msg "重启 miproxy..."
+    bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
+    sleep 2
+    bash "${SCRIPT_DIR}/main" start
+    log_msg "miproxy 已重启"
+fi
+
+# 更新订阅刷新守护进程配置
+log_msg "更新订阅刷新守护进程配置..."
+if [ -n "${SUB_URL}" ]; then
+    CURRENT_SUB_TYPE="remote"
+elif [ -n "${SUB_PATH}" ]; then
+    CURRENT_SUB_TYPE="local"
+else
+    CURRENT_SUB_TYPE="none"
+fi
+
+{
+    echo "SUBSCRIPTION_TYPE=${CURRENT_SUB_TYPE}"
+    echo "SUBSCRIPTION_URL=${SUB_URL}"
+    echo "SUBSCRIPTION_PATH=${SUB_PATH}"
+    echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
+} > "${VAR_DIR}/refresh_subscription.conf"
+chmod 666 "${VAR_DIR}/refresh_subscription.conf"
+
+bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "刷新守护进程重启失败"
+
+exit 0

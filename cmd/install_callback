@@ -61,6 +61,18 @@ esac
 
 log_msg "  HAS_SUB=${HAS_SUB}"
 
+# 自动从 SUB_URL 提取订阅源域名，加入 fake-ip-filter
+SUB_DOMAIN_FILTER=""
+if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
+    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
+    if [ -n "${domain}" ]; then
+        SUB_DOMAIN_FILTER="    - \"${domain}\"
+    - \"*.${domain}\"
+"
+        log_msg "  订阅源域名加入 fake-ip-filter: ${domain}"
+    fi
+fi
+
 # ============ 创建目录 ============
 mkdir -p "${TARGET_DIR}" "${VAR_DIR}/proxy_providers" "${UI_TARGET}"
 mkdir -p "${TRIM_PKGETC}" 2>/dev/null || true
@@ -216,7 +228,7 @@ log_msg "生成 config.yaml..."
     echo "  - MATCH,PROXY"
     echo ""
 
-    # DNS
+    # DNS（关键：把订阅域名加入 fake-ip-filter）
     echo "# DNS"
     echo "dns:"
     echo "  enable: true"
@@ -226,6 +238,9 @@ log_msg "生成 config.yaml..."
     echo "  fake-ip-filter:"
     echo "    - \"+.lan\""
     echo "    - \"+.local\""
+    if [ -n "${SUB_DOMAIN_FILTER}" ]; then
+        echo "${SUB_DOMAIN_FILTER}"
+    fi
     echo "  nameserver:"
     echo "    - 223.5.5.5"
     echo "    - 119.29.29.29"
@@ -234,6 +249,9 @@ log_msg "生成 config.yaml..."
 
 chmod 666 "${CONFIG_FILE}"
 log_msg "✅ config.yaml 已生成 (${CONFIG_FILE})"
+
+# 删除可能被旧版本遗留的中间文件
+rm -f "${VAR_DIR}/base.yaml" "${VAR_DIR}/subscription.yaml" "${VAR_DIR}/subscription.conf" 2>/dev/null
 
 # ============ 写入 settings.conf ============
 {

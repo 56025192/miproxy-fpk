@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # MiProxy 配置变更回调
-# 修复订阅更新问题：确保停止守护进程后再重启 miproxy，避免竞争条件
-# 修复：订阅下载失败时不退出，确保系统处于稳定状态
-# 新增：支持 base64 编码的订阅内容
+# 使用 mihomo proxy-providers 机制：订阅 URL 直接写入配置，mihomo 自动获取和解码
 
 set -e
 
@@ -35,50 +33,12 @@ log_msg "config_callback: 收到配置更新请求"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NEED_RESTART=0
-SUBSCRIPTION_CHANGED=0
 
 # === 处理 base.yaml 更新 ===
 
-# 安全改进：若清空了密码（wizard_proxy_user 和 wizard_proxy_pass 均为空），
-# 则移除 authentication 配置块
 remove_auth_block() {
     local file="$1"
-    # 移除 "authentication:" 行及其后续的 "  - ..." 行（最多 5 行）
     sed -i ':a;N;$!ba;s/\nauthentication:\([[:space:]]*\n[[:space:]]*- "[^"]*"\)\+//g' "${file}" 2>/dev/null || true
-}
-
-# 处理 TUN 配置
-update_tun_config() {
-    local file="$1"
-    local enable="$2"
-    
-    if [ -f "${file}" ]; then
-        # 检查是否存在 tun 块
-        if grep -q "^tun:" "${file}"; then
-            # 更新现有 tun 块的 enable 字段
-            sed -i "s/^\(tun:\)/\1/" "${file}"
-            if grep -q "^  enable:" "${file}"; then
-                sed -i "s/^  enable: .*/  enable: ${enable}/" "${file}"
-            else
-                # 在 tun: 行后插入 enable 字段
-                sed -i "/^tun:/a\  enable: ${enable}" "${file}"
-            fi
-        else
-            # 在文件末尾添加 tun 块
-            echo "" >> "${file}"
-            echo "# TUN 配置" >> "${file}"
-            echo "tun:" >> "${file}"
-            echo "  enable: ${enable}" >> "${file}"
-            echo "  stack: system" >> "${file}"
-            echo "  auto-route: true" >> "${file}"
-            echo "  auto-redirect: true" >> "${file}"
-            echo "  auto-detect-interface: true" >> "${file}"
-            echo "  dns-hijack:" >> "${file}"
-            echo "    - any:53" >> "${file}"
-            echo "    - tcp://any:53" >> "${file}"
-        fi
-        log_msg "已更新 TUN 配置: enable=${enable}"
-    fi
 }
 
 if [ -f "${VAR_DIR}/base.yaml" ]; then
@@ -93,27 +53,20 @@ if [ -f "${VAR_DIR}/base.yaml" ]; then
         NEED_RESTART=1
     fi
 
-    # 处理 authentication：清空或更新
+    # 处理 authentication
     if [ -z "${PROXY_USER}" ] && [ -z "${PROXY_PASS}" ]; then
-        # 用户清空了用户名/密码 → 移除 authentication 配置
         remove_auth_block "${VAR_DIR}/base.yaml"
         log_msg "已清空代理用户验证"
         NEED_RESTART=1
     elif [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
-        # 用户设置了用户名/密码 → 通过临时文件安全更新
         AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp_$$"
         printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
         chmod 600 "${AUTH_PASS_FILE}"
-
-        # 移除旧的 authentication
         remove_auth_block "${VAR_DIR}/base.yaml"
-
-        # 在 secret 行后插入新的 authentication
         local auth_val="${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")"
         sed -i "/^secret:/a\\
 authentication:\\
   - \"${auth_val}\"" "${VAR_DIR}/base.yaml"
-
         rm -f "${AUTH_PASS_FILE}"
         log_msg "已更新代理用户验证: ${PROXY_USER}"
         NEED_RESTART=1
@@ -121,7 +74,6 @@ authentication:\\
 
     # 处理 TUN 配置
     if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
-        # 更新现有 TUN 配置的 enable 字段
         if grep -q "^  enable:" "${VAR_DIR}/base.yaml"; then
             OLD_TUN=$(grep "^  enable:" "${VAR_DIR}/base.yaml" | awk '{print $2}')
             if [ "${OLD_TUN}" != "${TUN_ENABLE}" ]; then
@@ -130,13 +82,11 @@ authentication:\\
                 NEED_RESTART=1
             fi
         else
-            # 在 tun: 行后插入 enable 字段
             sed -i "/^tun:/a\  enable: ${TUN_ENABLE}" "${VAR_DIR}/base.yaml"
             log_msg "已添加 TUN 配置: enable=${TUN_ENABLE}"
             NEED_RESTART=1
         fi
     else
-        # 在文件末尾添加 TUN 配置块
         cat >> "${VAR_DIR}/base.yaml" << EOF
 
 # TUN 配置
@@ -155,91 +105,90 @@ EOF
     fi
 fi
 
-# === 处理订阅更新 ===
+# === 处理订阅配置（使用 proxy-providers）===
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 
-# 检测订阅内容是否为 base64 编码
-decode_subscription() {
-    local input_file="$1"
-    local output_file="$2"
-    
-    # 检查文件是否为空
-    if [ ! -s "${input_file}" ]; then
-        log_msg "订阅文件为空，跳过解码"
-        return 1
-    fi
-    
-    # 尝试检测是否为 base64 编码
-    # base64 编码的特征：只包含 A-Za-z0-9+/= 字符，且长度是 4 的倍数
-    local content
-    content=$(cat "${input_file}" | tr -d ' \n\t\r')
-    
-    # 检查是否全部是 base64 有效字符
-    if echo "${content}" | grep -qE '^[A-Za-z0-9+/=]+$'; then
-        # 可能是 base64，尝试解码
-        local decoded
-        decoded=$(echo "${content}" | base64 -d 2>/dev/null)
-        if [ $? -eq 0 ] && [ -n "${decoded}" ]; then
-            # 解码成功，检查解码后的内容是否为 YAML 格式
-            if echo "${decoded}" | grep -qE '^(proxies:|proxy-groups:|proxy-providers:|rules:|dns:)'; then
-                log_msg "检测到 base64 编码的订阅内容，正在解码..."
-                echo "${decoded}" > "${output_file}"
-                chmod 666 "${output_file}"
-                return 0
-            fi
-        fi
-    fi
-    
-    # 不是 base64 或解码失败，保持原内容
-    log_msg "订阅内容为明文格式"
-    cp -f "${input_file}" "${output_file}"
-    chmod 666 "${output_file}"
-    return 0
-}
+log_msg "更新订阅配置..."
+log_msg "  SUB_URL: ${SUB_URL:-（未设置）}"
+log_msg "  SUB_PATH: ${SUB_PATH:-（未设置）}"
+log_msg "  REFRESH_INTERVAL: ${REFRESH_INTERVAL_SEC}s"
 
-if [ -n "${SUB_URL}" ]; then
-    log_msg "下载远程订阅: ${SUB_URL}"
-    if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp" 2>/dev/null; then
-        # 检测并解码 base64 编码的订阅
-        if decode_subscription "${SUB_FILE}.tmp" "${SUB_FILE}"; then
-            # 验证订阅文件格式
-            if python3 -c "import yaml; yaml.safe_load(open('${SUB_FILE}', encoding='utf-8'))" 2>/dev/null; then
-                log_msg "远程订阅更新成功"
-                SUBSCRIPTION_CHANGED=1
-                NEED_RESTART=1
-            else
-                log_msg "订阅 YAML 格式错误，跳过更新"
-                rm -f "${SUB_FILE}"
-                echo "订阅格式错误" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
-            fi
-        fi
-        rm -f "${SUB_FILE}.tmp"
-    else
-        rm -f "${SUB_FILE}.tmp"
-        log_msg "远程订阅下载失败"
-        echo "远程订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
-        # 不退出，继续使用现有订阅或空订阅
-    fi
-elif [ -n "${SUB_PATH}" ]; then
-    if [ -f "${SUB_PATH}" ]; then
-        if [ "${SUB_PATH}" != "${SUB_FILE}" ]; then
-            # 本地文件也需要检测 base64 编码
-            if decode_subscription "${SUB_PATH}" "${SUB_FILE}"; then
-                log_msg "复制本地订阅: ${SUB_PATH}"
-                SUBSCRIPTION_CHANGED=1
-                NEED_RESTART=1
-            fi
-        fi
-    else
-        log_msg "本地订阅文件不存在: ${SUB_PATH}"
-        echo "本地订阅文件不存在" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
-    fi
-else
-    # 清空订阅
-    log_msg "清空订阅配置"
-    cat > "${SUB_FILE}" << 'EMPTYEOF'
-# 未配置订阅
-proxies: []
+# 检查是否有订阅变化
+OLD_SUB_URL=""
+OLD_SUB_PATH=""
+OLD_REFRESH_INTERVAL=""
+
+if [ -f "${VAR_DIR}/refresh_subscription.conf" ]; then
+    OLD_SUB_URL=$(grep -E "^SUBSCRIPTION_URL=" "${VAR_DIR}/refresh_subscription.conf" | cut -d= -f2)
+    OLD_SUB_PATH=$(grep -E "^SUBSCRIPTION_PATH=" "${VAR_DIR}/refresh_subscription.conf" | cut -d= -f2)
+    OLD_REFRESH_INTERVAL=$(grep -E "^REFRESH_INTERVAL=" "${VAR_DIR}/refresh_subscription.conf" | cut -d= -f2)
+fi
+
+if [ "${SUB_URL}" != "${OLD_SUB_URL}" ] || [ "${SUB_PATH}" != "${OLD_SUB_PATH}" ] || [ "${REFRESH_INTERVAL_SEC}" != "${OLD_REFRESH_INTERVAL}" ]; then
+    log_msg "订阅配置发生变化，需要更新"
+    NEED_RESTART=1
+    
+    # 构建新的订阅配置
+    if [ -n "${SUB_URL}" ]; then
+        log_msg "配置远程订阅: ${SUB_URL}"
+        cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 使用 proxy-providers 机制
+# mihomo 会自动从 URL 获取订阅内容并处理 base64 解码
+
+proxy-providers:
+  remote-sub:
+    type: http
+    url: "${SUB_URL}"
+    path: ./proxy_providers/remote-sub.yaml
+    interval: ${REFRESH_INTERVAL_SEC}
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+      - provider:remote-sub
+
+rules:
+  - MATCH,PROXY
+EOF
+    elif [ -n "${SUB_PATH}" ]; then
+        log_msg "配置本地订阅: ${SUB_PATH}"
+        if [ -f "${SUB_PATH}" ]; then
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 本地文件
+
+proxy-providers:
+  local-sub:
+    type: file
+    path: "${SUB_PATH}"
+    interval: ${REFRESH_INTERVAL_SEC}
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+      - provider:local-sub
+
+rules:
+  - MATCH,PROXY
+EOF
+        else
+            log_msg "本地订阅文件不存在，使用空订阅"
+            cat > "${SUB_FILE}" << 'EMPTYEOF'
+# 本地订阅文件不存在
+proxies:
+  - name: DIRECT
+    type: direct
 proxy-groups:
   - name: PROXY
     type: select
@@ -248,45 +197,43 @@ proxy-groups:
 rules:
   - MATCH,PROXY
 EMPTYEOF
+        fi
+    else
+        log_msg "清空订阅配置"
+        cat > "${SUB_FILE}" << 'EOF'
+# 未配置订阅
+proxies:
+  - name: DIRECT
+    type: direct
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EOF
+    fi
+    
     chmod 666 "${SUB_FILE}"
-    SUBSCRIPTION_CHANGED=1
-    NEED_RESTART=1
 fi
 
 # === 重新生成主配置 ===
 if [ "${NEED_RESTART}" = "1" ]; then
     log_msg "重新生成主配置 config.yaml..."
     
-    # 关键修复：先停止守护进程，避免竞争条件
+    # 停止守护进程
     log_msg "停止订阅刷新守护进程..."
     bash "${SCRIPT_DIR}/main" stop-refresh 2>>"${LOG_FILE}" || true
     sleep 1
-    
-    # 确保 subscription.yaml 存在
-    if [ ! -f "${SUB_FILE}" ]; then
-        log_msg "订阅文件不存在，创建空订阅"
-        cat > "${SUB_FILE}" << 'EMPTYEOF'
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
-        chmod 666 "${SUB_FILE}"
-    fi
     
     # 合并配置
     python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
     chmod 666 "${VAR_DIR}/config.yaml"
 
     log_msg "重启 miproxy..."
-    # 先停止 miproxy
     bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
     sleep 2
-    # 再启动 miproxy
     bash "${SCRIPT_DIR}/main" start
     sleep 1
     log_msg "miproxy 重启完成"
@@ -310,7 +257,7 @@ fi
 } > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
 
-# 最后启动守护进程（不在重启过程中启动）
+# 启动/重启守护进程
 if [ "${NEED_RESTART}" = "1" ]; then
     sleep 2
     log_msg "启动订阅刷新守护进程..."
@@ -319,4 +266,5 @@ else
     bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "守护进程重启失败"
 fi
 
+log_msg "config_callback 完成"
 exit 0

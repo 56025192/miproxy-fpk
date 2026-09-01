@@ -1,0 +1,346 @@
+#!/bin/bash
+
+# MiProxy 配置变更回调
+# 处理配置面板中的设置变更，包括订阅类型切换
+# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现，无需外部守护进程
+
+set -e
+
+APP_DEST="${TRIM_APPDEST}"
+VAR_DIR="${TRIM_PKGVAR}"
+UI_TARGET="${VAR_DIR}/ui"
+LOG_FILE="${VAR_DIR}/info.log"
+
+PROXY_USER="${wizard_proxy_user:-}"
+PROXY_PASS="${wizard_proxy_pass:-}"
+SECRET="${wizard_secret:-}"
+SUB_TYPE="${wizard_sub_type:-none}"
+SUB_URL="${wizard_sub_url:-}"
+SUB_PATH="${wizard_sub_path:-}"
+REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
+TUN_ENABLE="${wizard_tun_enable:-false}"
+
+if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
+    REFRESH_INTERVAL_SEC=0
+else
+    REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
+fi
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+log_msg "config_callback: 收到配置更新请求"
+log_msg "  SUB_TYPE: ${SUB_TYPE}"
+log_msg "  SUB_URL: ${SUB_URL:-（未设置）}"
+log_msg "  SUB_PATH: ${SUB_PATH:-（未设置）}"
+log_msg "  REFRESH_INTERVAL: ${REFRESH_INTERVAL_SEC}s"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+NEED_RESTART=0
+
+# === 处理 base.yaml 更新 ===
+
+remove_auth_block() {
+    local file="$1"
+    sed -i ':a;N;$!ba;s/\nauthentication:\([[:space:]]*\n[[:space:]]*- "[^"]*"\)\+//g' "${file}" 2>/dev/null || true
+}
+
+remove_secret_line() {
+    local file="$1"
+    sed -i '/^secret:/d' "${file}" 2>/dev/null || true
+}
+
+if [ -f "${VAR_DIR}/base.yaml" ]; then
+    # 处理 secret - 只有非空时才写入
+    if [ -n "${SECRET}" ]; then
+        # 移除旧的 secret 并添加新的
+        remove_secret_line "${VAR_DIR}/base.yaml"
+        sed -i "/^external-ui-name:/a secret: \"${SECRET}\"" "${VAR_DIR}/base.yaml"
+        log_msg "已更新控制面板密钥"
+        NEED_RESTART=1
+    else
+        # 清空密钥
+        remove_secret_line "${VAR_DIR}/base.yaml"
+        log_msg "已清空控制面板密钥（跳过写入空值）"
+        NEED_RESTART=1
+    fi
+
+    # 处理 authentication - 只有非空时才写入
+    if [ -z "${PROXY_USER}" ] && [ -z "${PROXY_PASS}" ]; then
+        remove_auth_block "${VAR_DIR}/base.yaml"
+        log_msg "已清空代理用户验证"
+        NEED_RESTART=1
+    elif [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+        AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp_$$"
+        printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
+        chmod 600 "${AUTH_PASS_FILE}"
+        remove_auth_block "${VAR_DIR}/base.yaml"
+        local auth_val="${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")"
+        sed -i "/^secret:/a\\\nauthentication:\\\n  - \"${auth_val}\"" "${VAR_DIR}/base.yaml" 2>/dev/null || \
+        sed -i "/^external-controller-cors:/i\\\nauthentication:\\\n  - \"${auth_val}\"" "${VAR_DIR}/base.yaml"
+        rm -f "${AUTH_PASS_FILE}"
+        log_msg "已更新代理用户验证: ${PROXY_USER}"
+        NEED_RESTART=1
+    fi
+
+    # 处理 TUN 配置
+    if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
+        if grep -q "^  enable:" "${VAR_DIR}/base.yaml"; then
+            OLD_TUN=$(grep "^  enable:" "${VAR_DIR}/base.yaml" | awk '{print $2}')
+            if [ "${OLD_TUN}" != "${TUN_ENABLE}" ]; then
+                sed -i "s/^  enable: .*/  enable: ${TUN_ENABLE}/" "${VAR_DIR}/base.yaml"
+                log_msg "已更新 TUN 配置: enable=${TUN_ENABLE}"
+                NEED_RESTART=1
+            fi
+        else
+            sed -i "/^tun:/a\  enable: ${TUN_ENABLE}" "${VAR_DIR}/base.yaml"
+            log_msg "已添加 TUN 配置: enable=${TUN_ENABLE}"
+            NEED_RESTART=1
+        fi
+    fi
+fi
+
+# === 处理订阅配置（使用 proxy-providers）===
+SUB_FILE="${VAR_DIR}/subscription.yaml"
+
+# DNS 配置模板
+DNS_CONFIG='dns:
+  enable: true
+  listen: 0.0.0.0:53
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "+.lan"
+    - "+.local"
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  fallback:
+    - 8.8.8.8
+    - 1.1.1.1'
+
+# 构建订阅配置 - 使用正确的 type (http/file)
+# interval 由 mihomo proxy-providers 内置处理
+build_subscription_config() {
+    local sub_type="$1"
+    local sub_url="$2"
+    local sub_path="$3"
+    local refresh_interval="$4"
+    
+    case "${sub_type}" in
+    remote)
+        # 远程订阅：type = http
+        if [ -n "${sub_url}" ]; then
+            log_msg "配置远程订阅: ${sub_url}"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 使用 proxy-providers 机制 (type: http)
+# mihomo 会自动从 URL 获取订阅内容并处理 base64 解码
+# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现
+
+proxy-providers:
+  subscription:
+    type: http
+    url: "${sub_url}"
+    path: ./proxy_providers/subscription.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+      - provider:subscription
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+            log_msg "已生成订阅配置 (type: http)"
+        else
+            log_msg "远程订阅类型但 URL 为空，生成占位配置"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 远程订阅已选择但未配置 URL
+
+proxy-providers:
+  subscription:
+    type: http
+    url: ""
+    path: ./proxy_providers/subscription.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+        fi
+        ;;
+    local)
+        # 本地订阅：type = file
+        if [ -n "${sub_path}" ]; then
+            log_msg "配置本地订阅: ${sub_path}"
+            if [ -f "${sub_path}" ]; then
+                cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 本地文件 (type: file)
+# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现
+
+proxy-providers:
+  subscription:
+    type: file
+    path: "${sub_path}"
+    interval: ${refresh_interval}
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+      - provider:subscription
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+                log_msg "已生成订阅配置 (type: file)"
+            else
+                log_msg "本地订阅文件不存在，使用空订阅"
+                cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 本地文件不存在
+
+proxy-providers:
+  subscription:
+    type: file
+    path: "${sub_path}"
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+            fi
+        else
+            log_msg "本地订阅类型但路径为空，生成占位配置"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 本地订阅已选择但未配置路径
+
+proxy-providers:
+  subscription:
+    type: file
+    path: ""
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+        fi
+        ;;
+    *)
+        # 清空订阅
+        log_msg "清空订阅配置"
+        cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 暂未配置订阅
+
+proxy-providers:
+  subscription:
+    type: http
+    url: ""
+    path: ./proxy_providers/subscription.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+        ;;
+    esac
+    
+    chmod 666 "${SUB_FILE}"
+}
+
+# 始终重新生成订阅配置
+build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_INTERVAL_SEC}"
+NEED_RESTART=1
+
+# === 重新生成主配置 ===
+if [ "${NEED_RESTART}" = "1" ]; then
+    log_msg "重新生成主配置 config.yaml..."
+    
+    # 合并配置
+    python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
+    chmod 666 "${VAR_DIR}/config.yaml"
+
+    log_msg "重启 miproxy..."
+    bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
+    sleep 2
+    bash "${SCRIPT_DIR}/main" start
+    sleep 1
+    log_msg "miproxy 重启完成"
+fi
+
+# === 更新订阅配置 ===
+log_msg "更新订阅配置..."
+
+{
+    echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
+    echo "SUBSCRIPTION_URL=${SUB_URL}"
+    echo "SUBSCRIPTION_PATH=${SUB_PATH}"
+    echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
+} > "${VAR_DIR}/subscription.conf"
+chmod 666 "${VAR_DIR}/subscription.conf"
+
+log_msg "config_callback 完成"
+exit 0

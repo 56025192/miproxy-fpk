@@ -4,7 +4,7 @@ MiProxy 配置合并脚本
 
 设计原则：
 - base.yaml 是系统基础配置，由 miproxy-fpk 管理（端口、面板、TUN、DNS、日志等）
-- subscription.yaml 是用户订阅，只贡献 节点/分组/规则 等订阅字段
+- subscription.yaml 是用户订阅，只贡献 节点/分组/规则/dns 等订阅字段
 - 合并时使用白名单机制：subscription.yaml 中只有订阅字段会进入最终配置
 - 这样无论订阅文件包含什么垃圾字段，都不会影响系统行为
 
@@ -14,6 +14,7 @@ MiProxy 配置合并脚本
   - proxy-groups      节点分组
   - rules             路由规则
   - rule-providers    规则提供者
+  - dns               DNS 配置（新增：同步订阅中的 DNS 设置）
 """
 
 import sys
@@ -30,13 +31,14 @@ log = logging.getLogger(__name__)
 
 
 # subscription.yaml 中允许进入最终配置的字段白名单
-# 其他字段（如 bind-address、allow-lan、dns、tun 等）一律剔除
+# 其他字段（如 bind-address、allow-lan、tun 等）一律剔除
 ALLOWED_SUB_FIELDS = {
     'proxies',
     'proxy-providers',
     'proxy-groups',
     'rules',
     'rule-providers',
+    'dns',  # 新增：同步订阅中的 DNS 配置
 }
 
 
@@ -83,6 +85,26 @@ def merge_configs(base_file, sub_file, output_file):
                     log.info(f"从订阅中剔除 {len(sub_removed)} 个非白名单字段（保护系统配置）:")
                     for k in sub_removed:
                         log.info(f"  - {k}")
+                
+                # 特殊处理 DNS：如果订阅中有 dns 配置，合并而不是覆盖
+                if 'dns' in sub_cleaned and 'dns' in base:
+                    log.info("订阅包含 DNS 配置，与基础配置合并...")
+                    # 基础配置的 DNS 优先级更高，只补充订阅中没有的字段
+                    merged_dns = {**sub_cleaned['dns'], **base.get('dns', {})}
+                    # 如果基础配置有 DNS 设置且订阅也有，则保留基础配置的设置
+                    if base.get('dns') and sub.get('dns'):
+                        # 合并策略：使用订阅的 DNS，但保留基础配置的关键设置
+                        base_dns = base.get('dns', {})
+                        sub_dns = sub_cleaned['dns']
+                        # 保留基础配置的 enable 设置（如果基础配置明确设置了）
+                        if 'enable' in base_dns and 'enable' in sub_dns:
+                            # 使用订阅的 enable 设置
+                            merged_dns['enable'] = sub_dns.get('enable', True)
+                        # 保留基础配置的 enhanced-mode
+                        if 'enhanced-mode' in base_dns:
+                            merged_dns['enhanced-mode'] = base_dns['enhanced-mode']
+                    sub_cleaned['dns'] = merged_dns
+                    log.info(f"DNS 合并完成: {list(merged_dns.keys())}")
         except Exception as e:
             log.warning(f"读取订阅配置失败: {e}，使用空订阅")
     else:

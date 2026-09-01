@@ -4,41 +4,25 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "MiProxy 是基于 mihomo 的高效代理工具，支持多种协议，可视化控制面板，开箱即用。"
+        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用
+
+✨ 功能特性：
+• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2
+• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）
+• 订阅管理：支持远程 URL 和本地文件
+• 自动刷新：可配置自动刷新间隔
+• 离线 GEO：内置 GEO 数据库，开箱即用
+
+💡 安装后可随时通过控制面板修改配置"
       }
     ]
   },
   {
-    "stepTitle": "控制面板",
+    "stepTitle": "代理设置",
     "items": [
       {
         "type": "tips",
-        "helpText": "选择要安装的控制面板。Zashboard 功能更丰富，MetaCubeXD 更轻量。"
-      },
-      {
-        "type": "radio",
-        "field": "wizard_dashboard",
-        "label": "选择控制面板",
-        "defaultValue": "zashboard",
-        "options": [
-          {
-            "value": "zashboard",
-            "label": "Zashboard（推荐）— 现代化界面，功能丰富"
-          },
-          {
-            "value": "metacubexd",
-            "label": "MetaCubeXD — 经典 Clash 风格，轻量稳定"
-          }
-        ]
-      }
-    ]
-  },
-  {
-    "stepTitle": "代理用户验证",
-    "items": [
-      {
-        "type": "tips",
-        "helpText": "设置 HTTP/SOCKS5/Mixed 代理连接的用户名和密码。"
+        "helpText": "设置代理连接的用户验证信息（可选）。留空则不启用验证。"
       },
       {
         "type": "text",
@@ -55,22 +39,13 @@
         "initValue": "",
         "placeholder": "留空则不启用",
         "rules": []
-      }
-    ]
-  },
-  {
-    "stepTitle": "控制面板密钥",
-    "items": [
-      {
-        "type": "tips",
-        "helpText": "设置控制面板的访问密钥。"
       },
       {
         "type": "text",
         "field": "wizard_secret",
         "label": "面板密钥",
         "initValue": "",
-        "placeholder": "留空则不启用",
+        "placeholder": "留空则不启用（建议设置）",
         "rules": []
       }
     ]
@@ -80,7 +55,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "配置代理节点订阅。"
+        "helpText": "配置代理节点订阅（可选）。可跳过，后续在控制面板中配置。"
       },
       {
         "type": "radio",
@@ -88,25 +63,11 @@
         "label": "订阅类型",
         "defaultValue": "none",
         "options": [
-          {
-            "value": "none",
-            "label": "暂不配置订阅"
-          },
-          {
-            "value": "remote",
-            "label": "远程订阅 URL"
-          },
-          {
-            "value": "local",
-            "label": "本地订阅文件"
-          }
+          {"value": "none", "label": "暂不配置（推荐）"},
+          {"value": "remote", "label": "远程订阅 URL"},
+          {"value": "local", "label": "本地订阅文件"}
         ],
-        "rules": [
-          {
-            "required": true,
-            "message": "请选择订阅类型"
-          }
-        ]
+        "rules": [{"required": true, "message": "请选择订阅类型"}]
       },
       {
         "type": "text",
@@ -114,10 +75,7 @@
         "label": "订阅 URL",
         "initValue": "",
         "rules": [],
-        "visibleIf": {
-          "field": "wizard_sub_type",
-          "value": "remote"
-        }
+        "visibleIf": {"field": "wizard_sub_type", "value": "remote"}
       },
       {
         "type": "text",
@@ -125,53 +83,21 @@
         "label": "本地订阅文件",
         "initValue": "/vol1/@appshare/miproxy/sub.yaml",
         "rules": [],
-        "visibleIf": {
-          "field": "wizard_sub_type",
-          "value": "local"
-        }
-      }
-    ]
-  },
-  {
-    "stepTitle": "自动刷新",
-    "items": [
-      {
-        "type": "tips",
-        "helpText": "设置订阅自动刷新间隔。"
+        "visibleIf": {"field": "wizard_sub_type", "value": "local"}
       },
       {
         "type": "radio",
         "field": "wizard_refresh_interval",
-        "label": "刷新间隔",
-        "defaultValue": "6",
+        "label": "自动刷新",
+        "defaultValue": "0",
         "options": [
-          {
-            "value": "0",
-            "label": "关闭自动刷新"
-          },
-          {
-            "value": "1",
-            "label": "每 1 小时"
-          },
-          {
-            "value": "6",
-            "label": "每 6 小时（推荐）"
-          },
-          {
-            "value": "12",
-            "label": "每 12 小时"
-          },
-          {
-            "value": "24",
-            "label": "每 24 小时"
-          }
+          {"value": "0", "label": "关闭自动刷新"},
+          {"value": "1", "label": "每 1 小时"},
+          {"value": "6", "label": "每 6 小时"},
+          {"value": "12", "label": "每 12 小时"},
+          {"value": "24", "label": "每 24 小时"}
         ],
-        "rules": [
-          {
-            "required": true,
-            "message": "请选择刷新间隔"
-          }
-        ]
+        "rules": [{"required": true, "message": "请选择刷新间隔"}]
       }
     ]
   }

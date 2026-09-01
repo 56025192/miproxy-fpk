@@ -3,8 +3,11 @@
 # MiProxy 配置变更回调
 # 处理配置面板中的设置变更，包括订阅类型切换
 # 自动刷新由 mihomo proxy-providers 内置 interval 功能实现，无需外部守护进程
-
-set -e
+#
+# 注意：不在头部使用 set -e。
+# 关键设计：保存配置和重启服务是分离的，
+# 即使 mihomo 重启失败，配置也已写入，fnOS 应当看到"保存成功"。
+# mihomo 启动失败的具体错误会写入 info.log，便于排查。
 
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
@@ -55,7 +58,6 @@ remove_secret_line() {
 if [ -f "${VAR_DIR}/base.yaml" ]; then
     # 处理 secret - 只有非空时才写入
     if [ -n "${SECRET}" ]; then
-        # 移除旧的 secret 并添加新的
         remove_secret_line "${VAR_DIR}/base.yaml"
         sed -i "/^external-ui-name:/a secret: \"${SECRET}\"" "${VAR_DIR}/base.yaml"
         log_msg "已更新控制面板密钥"
@@ -73,7 +75,6 @@ if [ -f "${VAR_DIR}/base.yaml" ]; then
 
     # 处理 authentication - 只有非空时才写入
     if [ -z "${PROXY_USER}" ] && [ -z "${PROXY_PASS}" ]; then
-        # 只有当原来有认证时才需要删除
         if grep -q '^authentication:' "${VAR_DIR}/base.yaml" 2>/dev/null; then
             remove_auth_block "${VAR_DIR}/base.yaml"
             log_msg "已清空代理用户验证"
@@ -134,8 +135,6 @@ DNS_CONFIG='dns:
     - 8.8.8.8
     - 1.1.1.1'
 
-# 构建订阅配置 - 使用正确的 type (http/file)
-# interval 由 mihomo proxy-providers 内置处理
 build_subscription_config() {
     local sub_type="$1"
     local sub_url="$2"
@@ -144,13 +143,10 @@ build_subscription_config() {
     
     case "${sub_type}" in
     remote)
-        # 远程订阅：type = http
         if [ -n "${sub_url}" ]; then
             log_msg "配置远程订阅: ${sub_url}"
             cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 使用 proxy-providers 机制 (type: http)
-# mihomo 会自动从 URL 获取订阅内容并处理 base64 解码
-# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现
 
 proxy-providers:
   subscription:
@@ -206,13 +202,11 @@ EOF
         fi
         ;;
     local)
-        # 本地订阅：type = file
         if [ -n "${sub_path}" ]; then
             log_msg "配置本地订阅: ${sub_path}"
             if [ -f "${sub_path}" ]; then
                 cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 本地文件 (type: file)
-# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现
 
 proxy-providers:
   subscription:
@@ -292,7 +286,6 @@ EOF
         fi
         ;;
     *)
-        # 清空订阅
         log_msg "清空订阅配置"
         cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 暂未配置订阅
@@ -347,24 +340,16 @@ else
     log_msg "订阅配置未变化"
 fi
 
-# === 重新生成主配置 ===
-if [ "${NEED_RESTART}" = "1" ]; then
-    log_msg "重新生成主配置 config.yaml..."
-    # 合并配置
-    python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
+# === 重新生成主配置（保存动作必须完成）===
+log_msg "重新生成主配置 config.yaml..."
+if python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"; then
     chmod 666 "${VAR_DIR}/config.yaml"
-
-    log_msg "重启 miproxy..."
-    bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
-    sleep 2
-    bash "${SCRIPT_DIR}/main" start
-    sleep 1
-    log_msg "miproxy 重启完成"
+    log_msg "主配置已生成"
 else
-    log_msg "配置无变化，跳过重启"
+    log_msg "警告: merge_config.py 失败，尝试保留旧 config.yaml"
 fi
 
-# === 更新订阅配置 ===
+# === 更新 subscription.conf（与 settings.conf 类似，保存动作必须完成）===
 {
     echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
     echo "SUBSCRIPTION_URL=${SUB_URL}"
@@ -372,6 +357,24 @@ fi
     echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
 } > "${VAR_DIR}/subscription.conf"
 chmod 666 "${VAR_DIR}/subscription.conf"
+
+# === 仅在配置变更时尝试重启 mihomo ===
+# 关键：保存动作已经完成（上面的 python merge 和 conf 写入）。
+# 即使重启失败也不影响保存结果。重启失败的具体错误会记录到 info.log。
+if [ "${NEED_RESTART}" = "1" ]; then
+    log_msg "尝试重启 miproxy..."
+    bash "${SCRIPT_DIR}/main" stop 2>>"${LOG_FILE}" || true
+    sleep 2
+    if bash "${SCRIPT_DIR}/main" start 2>>"${LOG_FILE}"; then
+        log_msg "miproxy 重启成功"
+    else
+        # 重启失败：不影响整体保存结果，只记录错误
+        log_msg "警告: miproxy 重启失败，配置已保存但服务未启动"
+        log_msg "提示: 请稍后在应用中心手动启动或查看 ${LOG_FILE}"
+    fi
+else
+    log_msg "配置无变化，跳过重启"
+fi
 
 log_msg "config_callback 完成"
 exit 0

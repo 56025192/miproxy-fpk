@@ -61,25 +61,38 @@ if [ -f "${VAR_DIR}/base.yaml" ]; then
         log_msg "已更新控制面板密钥"
         NEED_RESTART=1
     else
-        # 清空密钥
-        remove_secret_line "${VAR_DIR}/base.yaml"
-        log_msg "已清空控制面板密钥（跳过写入空值）"
-        NEED_RESTART=1
+        # 清空密钥 - 只有当原来有密钥时才需要重启
+        if grep -q '^secret:' "${VAR_DIR}/base.yaml" 2>/dev/null; then
+            remove_secret_line "${VAR_DIR}/base.yaml"
+            log_msg "已清空控制面板密钥"
+            NEED_RESTART=1
+        else
+            log_msg "控制面板密钥本就是空的，跳过"
+        fi
     fi
 
     # 处理 authentication - 只有非空时才写入
     if [ -z "${PROXY_USER}" ] && [ -z "${PROXY_PASS}" ]; then
-        remove_auth_block "${VAR_DIR}/base.yaml"
-        log_msg "已清空代理用户验证"
-        NEED_RESTART=1
+        # 只有当原来有认证时才需要删除
+        if grep -q '^authentication:' "${VAR_DIR}/base.yaml" 2>/dev/null; then
+            remove_auth_block "${VAR_DIR}/base.yaml"
+            log_msg "已清空代理用户验证"
+            NEED_RESTART=1
+        else
+            log_msg "代理用户验证本就是空的，跳过"
+        fi
     elif [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
         AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp_$$"
         printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
         chmod 600 "${AUTH_PASS_FILE}"
         remove_auth_block "${VAR_DIR}/base.yaml"
         local auth_val="${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")"
-        sed -i "/^secret:/a\\\nauthentication:\\\n  - \"${auth_val}\"" "${VAR_DIR}/base.yaml" 2>/dev/null || \
-        sed -i "/^external-controller-cors:/i\\\nauthentication:\\\n  - \"${auth_val}\"" "${VAR_DIR}/base.yaml"
+        sed -i "/^secret:/a\\
+authentication:\\
+  - \"${auth_val}\"" "${VAR_DIR}/base.yaml" 2>/dev/null || \
+        sed -i "/^external-controller-cors:/i\\
+authentication:\\
+  - \"${auth_val}\"" "${VAR_DIR}/base.yaml"
         rm -f "${AUTH_PASS_FILE}"
         log_msg "已更新代理用户验证: ${PROXY_USER}"
         NEED_RESTART=1
@@ -311,14 +324,32 @@ EOF
     chmod 666 "${SUB_FILE}"
 }
 
-# 始终重新生成订阅配置
+# 检测订阅配置是否真的有变化（避免无意义重启）
+SUB_CHANGED=0
+if [ -f "${SUB_FILE}" ]; then
+    if ! grep -q "type: ${SUB_TYPE}" "${SUB_FILE}" 2>/dev/null || \
+       ([ -n "${SUB_URL}" ] && ! grep -q "url: \"${SUB_URL}\"" "${SUB_FILE}" 2>/dev/null) || \
+       ([ -n "${SUB_PATH}" ] && ! grep -q "path: \"${SUB_PATH}\"" "${SUB_FILE}" 2>/dev/null) || \
+       ! grep -q "interval: ${REFRESH_INTERVAL_SEC}" "${SUB_FILE}" 2>/dev/null; then
+        SUB_CHANGED=1
+    fi
+else
+    SUB_CHANGED=1
+fi
+
+# 重新生成订阅配置
 build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_INTERVAL_SEC}"
-NEED_RESTART=1
+
+if [ "${SUB_CHANGED}" = "1" ]; then
+    NEED_RESTART=1
+    log_msg "订阅配置有变化，将重启服务"
+else
+    log_msg "订阅配置未变化"
+fi
 
 # === 重新生成主配置 ===
 if [ "${NEED_RESTART}" = "1" ]; then
     log_msg "重新生成主配置 config.yaml..."
-    
     # 合并配置
     python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
     chmod 666 "${VAR_DIR}/config.yaml"
@@ -329,11 +360,11 @@ if [ "${NEED_RESTART}" = "1" ]; then
     bash "${SCRIPT_DIR}/main" start
     sleep 1
     log_msg "miproxy 重启完成"
+else
+    log_msg "配置无变化，跳过重启"
 fi
 
 # === 更新订阅配置 ===
-log_msg "更新订阅配置..."
-
 {
     echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
     echo "SUBSCRIPTION_URL=${SUB_URL}"

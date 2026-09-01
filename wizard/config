@@ -1,6 +1,6 @@
 [
   {
-    "stepTitle": "代理用户验证",
+    "stepTitle": "代理设置",
     "items": [
       {
         "type": "tips",
@@ -12,9 +12,7 @@
         "label": "代理用户名",
         "initValue": "",
         "placeholder": "留空则不启用代理验证",
-        "rules": [
-          { "min": 0, "message": "" }
-        ]
+        "rules": [{"min": 0, "message": ""}]
       },
       {
         "type": "text",
@@ -22,9 +20,7 @@
         "label": "代理密码",
         "initValue": "",
         "placeholder": "留空则不启用代理验证",
-        "rules": [
-          { "min": 0, "message": "" }
-        ]
+        "rules": [{"min": 0, "message": ""}]
       }
     ]
   },
@@ -41,9 +37,27 @@
         "label": "面板密钥",
         "initValue": "",
         "placeholder": "留空则不启用密钥验证",
-        "rules": [
-          { "min": 0, "message": "" }
-        ]
+        "rules": [{"min": 0, "message": ""}]
+      }
+    ]
+  },
+  {
+    "stepTitle": "TUN 设置",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "TUN 功能可将系统所有流量通过代理转发（全局代理）。\\n\\n⚠️ 注意：\\n• TUN 需要 mihomo 以特殊方式运行，fnOS 手动安装的 mihomo 可能无法启用此功能\\n• 如果启用后服务异常，请关闭 TUN 重试\\n• 普通代理模式（无需 TUN）已能满足大多数使用场景"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_tun_enable",
+        "label": "启用 TUN",
+        "defaultValue": "false",
+        "options": [
+          {"value": "false", "label": "关闭（推荐）"},
+          {"value": "true", "label": "启用（需要内核支持）"}
+        ],
+        "rules": [{"required": true, "message": "请选择 TUN 状态"}]
       }
     ]
   },
@@ -52,25 +66,21 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "修改订阅后点击保存，代理会自动重新拉取并重启。"
+        "helpText": "修改订阅后点击保存，代理会自动重新拉取并重启。\\n\\n⚠️ 订阅兼容性：由于订阅处理逻辑采用硬编码方式实现，应用目前仅支持 Clash 格式的订阅链接。"
       },
       {
         "type": "text",
         "field": "wizard_sub_url",
         "label": "远程订阅 URL",
         "initValue": "",
-        "rules": [
-          { "pattern": "^https?://.*|^$", "message": "请输入正确的 URL 格式" }
-        ]
+        "rules": [{"pattern": "^https?://.*|^$", "message": "请输入正确的 URL 格式"}]
       },
       {
         "type": "text",
         "field": "wizard_sub_path",
         "label": "本地订阅文件路径",
         "initValue": "",
-        "rules": [
-          { "min": 0, "message": "请输入文件路径" }
-        ]
+        "rules": [{"min": 0, "message": "请输入文件路径"}]
       },
       {
         "type": "radio",
@@ -78,13 +88,13 @@
         "label": "自动刷新订阅",
         "defaultValue": "6",
         "options": [
-          { "value": "0",  "label": "禁用 — 仅手动刷新" },
-          { "value": "1",  "label": "每 1 小时" },
-          { "value": "6",  "label": "每 6 小时" },
-          { "value": "12", "label": "每 12 小时" },
-          { "value": "24", "label": "每 24 小时" }
+          {"value": "0", "label": "禁用 — 仅手动刷新"},
+          {"value": "1", "label": "每 1 小时"},
+          {"value": "6", "label": "每 6 小时"},
+          {"value": "12", "label": "每 12 小时"},
+          {"value": "24", "label": "每 24 小时"}
         ],
-        "rules": [{ "required": true, "message": "请选择刷新间隔" }]
+        "rules": [{"required": true, "message": "请选择刷新间隔"}]
       }
     ]
   },
@@ -93,7 +103,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/\n\n📄 主配置: config.yaml\n📄 订阅: subscription.yaml\n📄 日志: info.log\n\n🎯 默认打开 Zashboard 控制面板\n\n版本: v2.6.10 | MiProxy"
+        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/\\n\\n📄 主配置: config.yaml\\n📄 订阅: subscription.yaml\\n📄 日志: info.log\\n\\n🎯 默认打开 Zashboard 控制面板\\n\\n版本: v2.6.10 | MiProxy"
       }
     ]
   }

@@ -1,5 +1,21 @@
 #!/bin/bash
 
-### This script is called before the user upgrades the application.
+# MiProxy 升级前回调
+# 职责：平滑重启 miproxy，为升级做准备（不停止进程，仅确保状态）
 
+set +e  # 不因错误中断
+
+VAR_DIR="${TRIM_PKGVAR}"
+LOG_FILE="${VAR_DIR}/info.log"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrade_init: 升级前准备" >> "${LOG_FILE}"
+
+# 停止订阅刷新守护进程（避免升级期间产生冲突）
+bash "${SCRIPT_DIR}/main" stop-refresh >> "${LOG_FILE}" 2>&1 || true
+
+# 停止主进程
+bash "${SCRIPT_DIR}/main" stop >> "${LOG_FILE}" 2>&1 || true
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrade_init: 进程已停止，等待升级文件写入" >> "${LOG_FILE}"
 exit 0

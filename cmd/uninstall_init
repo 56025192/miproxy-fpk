@@ -1,11 +1,13 @@
 #!/bin/bash
 
 # MiProxy 卸载前回调
-# 职责：彻底停止 miproxy 进程（包括主进程、子进程、可能的守护进程）
-# 注意：不用 set -e，所有清理操作加 || true 兜底
+# 职责：安全停止 miproxy 进程，限定在 miproxy 专属范围内
+# 注意：所有清理操作加 || true 兜底
+
+set +e
 
 VAR_DIR="${TRIM_PKGVAR}"
-LOG_FILE="/tmp/miproxy_uninstall.log"
+LOG_FILE="${VAR_DIR}/info.log"
 exec >>"${LOG_FILE}" 2>&1
 
 echo ""
@@ -13,26 +15,34 @@ echo "=========================================="
 echo "$(date '+%Y-%m-%d %H:%M:%S') uninstall_init: 开始停止 miproxy 进程"
 echo "=========================================="
 
-# 方法 1：通过 PID 文件停止（如果还在）
+# ============ 核心原则：只杀属于本应用 VAR_DIR 的进程 ============
+# 避免误杀其他 miproxy 实例或系统中的其他 mihomo 进程
+
+# 方法 1：通过 PID 文件停止（仅限本应用 PID）
 PID_FILE="${VAR_DIR}/app.pid"
 if [ -f "${PID_FILE}" ]; then
     PID=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
     if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
-        echo "通过 PID 文件停止主进程 ${PID}"
-        kill -TERM "${PID}" 2>/dev/null || true
-        sleep 2
-        if kill -0 "${PID}" 2>/dev/null; then
-            echo "主进程仍在运行，强制杀掉"
-            kill -KILL "${PID}" 2>/dev/null || true
+        # 验证该 PID 确实是本应用的 mihomo 进程
+        CMDLINE=$(cat /proc/${PID}/cmdline 2>/dev/null | tr '\0' ' ' || true)
+        if echo "${CMDLINE}" | grep -q "mihomo.*-d.*${VAR_DIR}"; then
+            echo "通过 PID 文件停止主进程 ${PID}"
+            kill -TERM "${PID}" 2>/dev/null || true
+            sleep 2
+            if kill -0 "${PID}" 2>/dev/null; then
+                kill -KILL "${PID}" 2>/dev/null || true
+            fi
+        else
+            echo "PID ${PID} 不是本应用 mihomo 进程，跳过"
         fi
     fi
-    rm -f "${PID_FILE}" 2>/dev/null || true
+    rm -f "${PID_FILE}"
 fi
 
-# 方法 2：兜底，按进程名杀（处理子进程或 PID 文件丢失情况）
+# 方法 2：按 mihomo 命令行参数精确匹配 VAR_DIR（仅限本应用）
 MIHOMO_PIDS=$(pgrep -f "mihomo.*-d.*${VAR_DIR}" 2>/dev/null || true)
 if [ -n "${MIHOMO_PIDS}" ]; then
-    echo "通过进程名找到残留进程: ${MIHOMO_PIDS}"
+    echo "找到本应用 mihomo 进程: ${MIHOMO_PIDS}"
     for P in ${MIHOMO_PIDS}; do
         kill -TERM "${P}" 2>/dev/null || true
     done
@@ -44,75 +54,48 @@ if [ -n "${MIHOMO_PIDS}" ]; then
     done
 fi
 
-# 方法 3：兜底，杀掉所有名为 mihomo 的进程
-REMAINING=$(pgrep -x mihomo 2>/dev/null || true)
-if [ -n "${REMAINING}" ]; then
-    echo "发现残留 mihomo 进程: ${REMAINING}，强制杀掉"
-    pkill -KILL -x mihomo 2>/dev/null || true
-    sleep 1
-fi
-
-# 方法 4：兜底，按可执行文件路径杀
-PATH_BASED=$(pgrep -f "/vol1/@appdata/miproxy/target/mihomo" 2>/dev/null || true)
-if [ -n "${PATH_BASED}" ]; then
-    echo "通过路径找到残留进程: ${PATH_BASED}"
-    pkill -KILL -f "/vol1/@appdata/miproxy/target/mihomo" 2>/dev/null || true
-    sleep 1
-fi
-
-# 方法 5：兜底，杀掉监听服务端口的进程
-for PORT in 7890 9090; do
-    PORT_PIDS=$(ss -tlnp 2>/dev/null | awk -v p=":${PORT} " '$0 ~ p' | grep -oP 'pid=\K[0-9]+' | sort -u || true)
-    for P in ${PORT_PIDS}; do
-        if [ -n "${P}" ] && [ "${P}" != "0" ]; then
-            CMD=$(cat /proc/${P}/cmdline 2>/dev/null | tr '\0' ' ' | head -c 100 || true)
-            if echo "${CMD}" | grep -q "mihomo"; then
-                echo "杀掉监听 ${PORT} 的 mihomo 进程 ${P}"
-                kill -KILL "${P}" 2>/dev/null || true
-            fi
-        fi
-    done
-done
-
-# 方法 6：停止订阅刷新守护进程
+# 方法 3：停止订阅刷新守护进程（仅限本应用 VAR_DIR）
 REFRESH_PID_FILE="${VAR_DIR}/refresh_subscription.pid"
 if [ -f "${REFRESH_PID_FILE}" ]; then
     RPID=$(head -n 1 "${REFRESH_PID_FILE}" | tr -d '[:space:]')
     if [ -n "${RPID}" ] && kill -0 "${RPID}" 2>/dev/null; then
-        echo "通过 PID 文件停止订阅刷新守护进程 ${RPID}"
-        kill -TERM "${RPID}" 2>/dev/null || true
-        sleep 2
-        if kill -0 "${RPID}" 2>/dev/null; then
-            kill -KILL "${RPID}" 2>/dev/null || true
+        CMDLINE=$(cat /proc/${RPID}/cmdline 2>/dev/null | tr '\0' ' ' || true)
+        if echo "${CMDLINE}" | grep -q "refresh_subscription_loop.sh"; then
+            echo "停止订阅刷新守护进程 ${RPID}"
+            kill -TERM "${RPID}" 2>/dev/null || true
+            sleep 2
+            if kill -0 "${RPID}" 2>/dev/null; then
+                kill -KILL "${RPID}" 2>/dev/null || true
+            fi
         fi
     fi
-    rm -f "${REFRESH_PID_FILE}" 2>/dev/null || true
+    rm -f "${REFRESH_PID_FILE}"
 fi
 
-# 方法 7：兜底，按守护脚本名杀
-DAEMON_PIDS=$(pgrep -f "refresh_subscription_loop.sh" 2>/dev/null || true)
+# 方法 4：精确杀本应用订阅刷新守护（万一 PID 文件丢失）
+DAEMON_PIDS=$(pgrep -f "refresh_subscription_loop.sh.*VAR_DIR=${VAR_DIR}" 2>/dev/null || true)
+if [ -z "${DAEMON_PIDS}" ]; then
+    # 兼容旧版：含 refresh_subscription.conf 的进程
+    DAEMON_PIDS=$(pgrep -f "refresh_subscription_loop.sh.*${VAR_DIR}" 2>/dev/null || true)
+fi
 if [ -n "${DAEMON_PIDS}" ]; then
-    echo "通过脚本名找到残留守护进程: ${DAEMON_PIDS}"
+    echo "停止残留守护进程: ${DAEMON_PIDS}"
     for P in ${DAEMON_PIDS}; do
         kill -KILL "${P}" 2>/dev/null || true
     done
 fi
 
+# ============ 不再全局杀所有名为 mihomo 的进程 ============
+# （原方法 3/4 会误杀其他 mihomo 实例，已移除）
+
 sleep 1
 
 # 最终验证
-FINAL=$(pgrep -x mihomo 2>/dev/null || true)
+FINAL=$(pgrep -f "mihomo.*-d.*${VAR_DIR}" 2>/dev/null || true)
 if [ -n "${FINAL}" ]; then
-    echo "警告：仍有 mihomo 进程残留: ${FINAL}"
+    echo "警告：仍有本应用 mihomo 进程残留: ${FINAL}"
 else
-    echo "uninstall_init: 所有 mihomo 进程已停止"
-fi
-
-DAEMON_FINAL=$(pgrep -f "refresh_subscription_loop.sh" 2>/dev/null || true)
-if [ -n "${DAEMON_FINAL}" ]; then
-    echo "警告：仍有订阅刷新守护进程残留: ${DAEMON_FINAL}"
-else
-    echo "uninstall_init: 订阅刷新守护进程已停止"
+    echo "uninstall_init: 所有 miproxy 进程已停止"
 fi
 
 exit 0

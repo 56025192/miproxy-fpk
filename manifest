@@ -7,7 +7,7 @@
 appname               = miproxy
 version               = 2.6.8
 display_name          = MiProxy
-desc                  = MiProxy v2.6.8 - mihomo 代理核心，支持 VMess/VLess/Trojan/Shadowsocks/Hysteria2 等多种协议，内置双控制面板、订阅管理与 GEO 数据库
+desc                  = MiProxy v2.6.8 - 基于 mihomo 代理核心的飞牛 NAS 应用，支持 VMess/VLess/Trojan/Shadowsocks/Hysteria2 等多种协议，提供双控制面板（Zashboard/MetaCubeXD）供选择，内置订阅管理、自动刷新、GEO 数据库，开箱即用
 platform              = all
 source                = thirdparty
 os_min_version        = 1.1.0

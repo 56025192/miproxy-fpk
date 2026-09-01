@@ -5,7 +5,7 @@
 # 由 cmd/main 在 start 时启动，stop 时清理。
 #
 # 配置（环境变量）：
-#   SUBSCRIPTION_URL    远程订阅 URL（优先，必须为 https://）
+#   SUBSCRIPTION_URL    远程订阅 URL（优先）
 #   SUBSCRIPTION_PATH   本地订阅文件路径
 #   REFRESH_INTERVAL    刷新间隔（秒），默认 21600（6 小时），0 表示禁用
 #   VAR_DIR             miproxy 数据目录（${TRIM_PKGVAR}）
@@ -56,11 +56,6 @@ refresh_subscription() {
     local new_hash=""
 
     if [ -n "${SUBSCRIPTION_URL}" ]; then
-        # 安全改进：强制要求 HTTPS
-        if ! echo "${SUBSCRIPTION_URL}" | grep -q "^https://"; then
-            log_msg "跳过非 HTTPS 订阅 URL: ${SUBSCRIPTION_URL}"
-            return 1
-        fi
         if ! curl -fsSL --max-time 60 "${SUBSCRIPTION_URL}" -o "${new_file}" 2>>"${LOG_FILE}"; then
             log_msg "远程订阅拉取失败: ${SUBSCRIPTION_URL}"
             rm -f "${new_file}"

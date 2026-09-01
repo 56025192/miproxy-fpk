@@ -1,0 +1,372 @@
+#!/bin/bash
+
+# MiProxy 安装后回调脚本
+# 使用 mihomo proxy-providers 机制：订阅 URL 直接写入配置，mihomo 自动获取和解码
+
+set -e
+
+# 目录
+APP_DEST="${TRIM_APPDEST}"
+TARGET_DIR="${TRIM_PKGVAR}/target"
+VAR_DIR="${TRIM_PKGVAR}"
+UI_TARGET="${VAR_DIR}/ui"
+
+# 向导变量
+PROXY_USER="${wizard_proxy_user:-}"
+PROXY_PASS="${wizard_proxy_pass:-}"
+SECRET="${wizard_secret:-}"
+HTTP_PORT="${wizard_http_port:-7890}"
+API_PORT="${wizard_api_port:-9090}"
+SUB_TYPE="${wizard_sub_type:-none}"
+SUB_URL="${wizard_sub_url:-}"
+SUB_PATH="${wizard_sub_path:-}"
+REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
+TUN_ENABLE="${wizard_tun_enable:-false}"
+
+if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
+    REFRESH_INTERVAL_SEC=0
+else
+    REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
+fi
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
+# 创建必要目录
+mkdir -p "${TARGET_DIR}"
+mkdir -p "${VAR_DIR}"
+mkdir -p "${UI_TARGET}"
+mkdir -p "${VAR_DIR}/proxy_providers"
+
+# 检测是否有上次保留的数据
+PRESERVED_FLAG="${VAR_DIR}/.preserved"
+if [ -f "${PRESERVED_FLAG}" ]; then
+    log_msg "检测到上次保留的数据"
+    PRESERVED=1
+    rm -f "${PRESERVED_FLAG}"
+else
+    PRESERVED=0
+fi
+
+# 复制 miproxy 核心
+log_msg "复制 mihomo 核心..."
+cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
+chmod +x "${TARGET_DIR}/mihomo"
+log_msg "mihomo 核心复制完成"
+
+# 复制两个面板
+log_msg "复制控制面板..."
+mkdir -p "${UI_TARGET}/zashboard"
+mkdir -p "${UI_TARGET}/metacubexd"
+cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null || true
+cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null || true
+log_msg "控制面板复制完成"
+
+# 复制桌面入口配置和图标
+log_msg "复制桌面入口配置和图标..."
+mkdir -p "${UI_TARGET}/images"
+cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
+cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html" 2>/dev/null || true
+cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
+chmod 666 "${UI_TARGET}/config"
+log_msg "桌面入口配置和图标复制完成"
+
+# ============ 构建基础配置 ============
+AUTH_CONFIG=""
+AUTH_PASS_FILE=""
+if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+    AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp"
+    printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
+    chmod 600 "${AUTH_PASS_FILE}"
+    AUTH_CONFIG="authentication:
+  - \"${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")\""
+    log_msg "已启用代理用户验证: ${PROXY_USER}"
+    rm -f "${AUTH_PASS_FILE}"
+else
+    log_msg "未设置代理用户验证"
+fi
+
+if [ -n "${SECRET}" ]; then
+    SECRET_CONFIG="secret: \"${SECRET}\""
+    log_msg "已设置控制面板密钥"
+else
+    SECRET_CONFIG="secret: \"\""
+    log_msg "未设置控制面板密钥"
+fi
+
+TUN_CONFIG="tun:
+  enable: ${TUN_ENABLE}
+  stack: system
+  auto-route: true
+  auto-redirect: true
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53
+    - tcp://any:53"
+
+# 写入 base.yaml
+if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
+    log_msg "复用现有 base.yaml"
+    if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
+        sed -i "s/^  enable: .*/  enable: ${TUN_ENABLE}/" "${VAR_DIR}/base.yaml"
+    fi
+else
+    log_msg "写入基础配置 base.yaml..."
+cat > "${VAR_DIR}/base.yaml" << EOF
+# MiProxy 基础配置（系统管理，请勿手动修改）
+
+mixed-port: ${HTTP_PORT}
+allow-lan: true
+mode: rule
+log-level: info
+ipv6: false
+
+# 控制面板
+external-controller: 0.0.0.0:${API_PORT}
+external-ui: ${UI_TARGET}
+external-ui-name: zashboard
+${SECRET_CONFIG}
+
+# 代理用户验证
+${AUTH_CONFIG}
+
+# 跨域允许
+external-controller-cors:
+  allow-private-network: true
+  allow-origins:
+    - "*"
+
+# GEO 数据库模式
+geodata-mode: true
+
+# TUN 配置
+${TUN_CONFIG}
+EOF
+fi
+
+# 复制离线 GEO 数据库
+if [ -d "${APP_DEST}/data" ]; then
+    log_msg "复制离线 GEO 数据库..."
+    cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"
+    cp -f "${APP_DEST}/data/geosite.dat" "${VAR_DIR}/geosite.dat"
+    cp -f "${APP_DEST}/data/Country.mmdb" "${VAR_DIR}/Country.mmdb"
+    chmod 666 "${VAR_DIR}/geoip.dat" "${VAR_DIR}/geosite.dat" "${VAR_DIR}/Country.mmdb"
+    log_msg "离线 GEO 数据库已就绪"
+fi
+
+# ============ 构建订阅配置（使用 proxy-providers）============
+log_msg "处理订阅配置 (类型: ${SUB_TYPE})..."
+SUB_FILE="${VAR_DIR}/subscription.yaml"
+
+# DNS 配置模板
+DNS_CONFIG='dns:
+  enable: true
+  listen: 0.0.0.0:53
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "+.lan"
+    - "+.local"
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  fallback:
+    - 8.8.8.8
+    - 1.1.1.1'
+
+# 构建订阅配置 - 使用正确的 type (http/file)
+build_subscription_config() {
+    local sub_type="$1"
+    local sub_url="$2"
+    local sub_path="$3"
+    local refresh_interval="$4"
+    
+    case "${sub_type}" in
+    remote)
+        # 远程订阅：type = http
+        if [ -n "${sub_url}" ]; then
+            log_msg "配置远程订阅: ${sub_url}, 刷新间隔: ${refresh_interval}s"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 使用 proxy-providers 机制 (type: http)
+# mihomo 会自动从 URL 获取订阅内容并处理 base64 解码
+
+proxy-providers:
+  subscription:
+    type: http
+    url: "${sub_url}"
+    path: ./proxy_providers/subscription.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+      - provider:subscription
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+            log_msg "已生成远程订阅配置 (type: http)"
+        else
+            log_msg "远程订阅类型但 URL 为空，生成占位配置"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 远程订阅已选择但未配置 URL
+
+proxy-providers:
+  subscription:
+    type: http
+    url: ""
+    path: ./proxy_providers/subscription.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+        fi
+        ;;
+    local)
+        # 本地订阅：type = file
+        if [ -n "${sub_path}" ]; then
+            log_msg "配置本地订阅: ${sub_path}, 刷新间隔: ${refresh_interval}s"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 本地文件 (type: file)
+
+proxy-providers:
+  subscription:
+    type: file
+    path: "${sub_path}"
+    interval: ${refresh_interval}
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+      - provider:subscription
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+            log_msg "已生成订阅配置 (type: file)"
+        else
+            log_msg "本地订阅类型但路径为空，生成占位配置"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 本地订阅已选择但未配置路径
+
+proxy-providers:
+  subscription:
+    type: file
+    path: ""
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+        fi
+        ;;
+    *)
+        # 未配置订阅：生成空配置
+        log_msg "未配置订阅，生成空 proxy-providers 占位符"
+        cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 暂未配置订阅
+
+proxy-providers:
+  subscription:
+    type: http
+    url: ""
+    path: ./proxy_providers/subscription.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+
+rules:
+  - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
+EOF
+        ;;
+    esac
+    chmod 666 "${SUB_FILE}"
+}
+
+# 始终重新生成订阅配置
+build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_INTERVAL_SEC}"
+
+# 生成主配置
+log_msg "生成主配置 config.yaml..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
+chmod 666 "${VAR_DIR}/config.yaml"
+log_msg "主配置已生成"
+
+# 写入 settings.conf
+mkdir -p "${TRIM_PKGETC}"
+{
+    echo "wizard_proxy_user=${PROXY_USER}"
+    echo "wizard_proxy_pass=${PROXY_PASS}"
+    echo "wizard_secret=${SECRET}"
+    echo "wizard_http_port=${HTTP_PORT}"
+    echo "wizard_api_port=${API_PORT}"
+    echo "wizard_sub_type=${SUB_TYPE}"
+    echo "wizard_sub_url=${SUB_URL}"
+    echo "wizard_sub_path=${SUB_PATH}"
+    echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
+    echo "wizard_tun_enable=${TUN_ENABLE}"
+} > "${TRIM_PKGETC}/settings.conf"
+
+# 写入刷新配置
+{
+    echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
+    echo "SUBSCRIPTION_URL=${SUB_URL}"
+    echo "SUBSCRIPTION_PATH=${SUB_PATH}"
+    echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
+} > "${VAR_DIR}/refresh_subscription.conf"
+chmod 666 "${VAR_DIR}/refresh_subscription.conf"
+
+log_msg "安装完成!"
+exit 0

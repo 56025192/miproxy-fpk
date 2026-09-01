@@ -21,6 +21,8 @@ SUB_TYPE="${wizard_sub_type:-none}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
+# TUN 配置（默认为 false）
+TUN_ENABLE="${wizard_tun_enable:-false}"
 if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
     REFRESH_INTERVAL_SEC=0
 else
@@ -95,9 +97,38 @@ else
     log_msg "未设置控制面板密钥"
 fi
 
+# 构建 TUN 配置
+TUN_CONFIG="tun:
+  enable: ${TUN_ENABLE}
+  stack: system
+  auto-route: true
+  auto-redirect: true
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53
+    - tcp://any:53"
+
+if [ "${TUN_ENABLE}" = "true" ]; then
+    log_msg "已启用 TUN 功能"
+else
+    log_msg "未启用 TUN 功能"
+fi
+
 # 写入 base.yaml
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
     log_msg "复用现有 base.yaml"
+    # 即使复用 base.yaml，也检查是否需要更新 TUN 配置
+    if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
+        # 更新现有 TUN 配置的 enable 字段
+        sed -i "s/^  enable: .*/  enable: ${TUN_ENABLE}/" "${VAR_DIR}/base.yaml"
+        log_msg "已更新 TUN 配置: enable=${TUN_ENABLE}"
+    else
+        # 在文件末尾添加 TUN 配置
+        echo "" >> "${VAR_DIR}/base.yaml"
+        echo "# TUN 配置" >> "${VAR_DIR}/base.yaml"
+        echo "${TUN_CONFIG}" >> "${VAR_DIR}/base.yaml"
+        log_msg "已添加 TUN 配置: enable=${TUN_ENABLE}"
+    fi
 else
     log_msg "写入基础配置 base.yaml..."
 cat > "${VAR_DIR}/base.yaml" << EOF
@@ -125,12 +156,11 @@ external-controller-cors:
   allow-origins:
     - "*"
 
-# TUN 默认关闭
-tun:
-  enable: false
-
 # GEO 数据库模式（避免 miproxy 启动时联网下载）
 geodata-mode: true
+
+# TUN 配置
+${TUN_CONFIG}
 EOF
 fi
 
@@ -242,6 +272,7 @@ mkdir -p "${TRIM_PKGETC}"
     echo "wizard_sub_url=${SUB_URL}"
     echo "wizard_sub_path=${SUB_PATH}"
     echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
+    echo "wizard_tun_enable=${TUN_ENABLE}"
 } > "${TRIM_PKGETC}/settings.conf"
 
 # 写入刷新守护进程配置

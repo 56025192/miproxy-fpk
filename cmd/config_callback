@@ -32,19 +32,49 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NEED_RESTART=0
 
 # === 处理 base.yaml 更新 ===
+
+# 安全改进：若清空了密码（wizard_proxy_user 和 wizard_proxy_pass 均为空），
+# 则移除 authentication 配置块
+remove_auth_block() {
+    local file="$1"
+    # 移除 "authentication:" 行及其后续的 "  - ..." 行（最多 5 行）
+    sed -i ':a;N;$!ba;s/\nauthentication:\([[:space:]]*\n[[:space:]]*- "[^"]*"\)\+//g' "${file}" 2>/dev/null || true
+}
+
 if [ -f "${VAR_DIR}/base.yaml" ]; then
     # 更新 secret
-    sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
-    
-    # 更新 authentication
-    if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+    if [ -n "${SECRET}" ]; then
+        sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
+        log_msg "已更新控制面板密钥"
+        NEED_RESTART=1
+    else
+        sed -i 's/^secret: "[^"]*"/secret: ""/' "${VAR_DIR}/base.yaml"
+        log_msg "已清空控制面板密钥"
+        NEED_RESTART=1
+    fi
+
+    # 处理 authentication：清空或更新
+    if [ -z "${PROXY_USER}" ] && [ -z "${PROXY_PASS}" ]; then
+        # 用户清空了用户名/密码 → 移除 authentication 配置
+        remove_auth_block "${VAR_DIR}/base.yaml"
+        log_msg "已清空代理用户验证"
+        NEED_RESTART=1
+    elif [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+        # 用户设置了用户名/密码 → 通过临时文件安全更新
+        AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp_$$"
+        printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
+        chmod 600 "${AUTH_PASS_FILE}"
+
         # 移除旧的 authentication
-        sed -i '/^authentication:/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        sed -i '/^  - "/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        # 添加新的 authentication
+        remove_auth_block "${VAR_DIR}/base.yaml"
+
+        # 在 secret 行后插入新的 authentication
+        local auth_val="${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")"
         sed -i "/^secret:/a\\
 authentication:\\
-  - \"${PROXY_USER}:${PROXY_PASS}\"" "${VAR_DIR}/base.yaml"
+  - \"${auth_val}\"" "${VAR_DIR}/base.yaml"
+
+        rm -f "${AUTH_PASS_FILE}"
         log_msg "已更新代理用户验证: ${PROXY_USER}"
         NEED_RESTART=1
     fi
@@ -54,16 +84,23 @@ fi
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 
 if [ -n "${SUB_URL}" ]; then
-    log_msg "下载远程订阅: ${SUB_URL}"
-    if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp"; then
-        mv "${SUB_FILE}.tmp" "${SUB_FILE}"
-        log_msg "远程订阅更新成功"
-        chmod 666 "${SUB_FILE}"
-        NEED_RESTART=1
+    # 强制要求 HTTPS
+    if echo "${SUB_URL}" | grep -q "^https://"; then
+        log_msg "下载远程订阅: ${SUB_URL}"
+        if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp"; then
+            mv "${SUB_FILE}.tmp" "${SUB_FILE}"
+            chmod 666 "${SUB_FILE}"
+            log_msg "远程订阅更新成功"
+            NEED_RESTART=1
+        else
+            rm -f "${SUB_FILE}.tmp"
+            log_msg "远程订阅下载失败"
+            echo "远程订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+            exit 1
+        fi
     else
-        rm -f "${SUB_FILE}.tmp"
-        log_msg "远程订阅下载失败"
-        echo "远程订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        log_msg "跳过非 HTTPS 订阅 URL: ${SUB_URL}"
+        echo "订阅 URL 必须使用 https://" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
         exit 1
     fi
 elif [ -n "${SUB_PATH}" ]; then

@@ -5,7 +5,7 @@
 # 由 cmd/main 在 start 时启动，stop 时清理。
 #
 # 配置（环境变量）：
-#   SUBSCRIPTION_URL    远程订阅 URL（优先）
+#   SUBSCRIPTION_URL    远程订阅 URL（优先，必须为 https://）
 #   SUBSCRIPTION_PATH   本地订阅文件路径
 #   REFRESH_INTERVAL    刷新间隔（秒），默认 21600（6 小时），0 表示禁用
 #   VAR_DIR             miproxy 数据目录（${TRIM_PKGVAR}）
@@ -56,14 +56,19 @@ refresh_subscription() {
     local new_hash=""
 
     if [ -n "${SUBSCRIPTION_URL}" ]; then
+        # 安全改进：强制要求 HTTPS
+        if ! echo "${SUBSCRIPTION_URL}" | grep -q "^https://"; then
+            log_msg "跳过非 HTTPS 订阅 URL: ${SUBSCRIPTION_URL}"
+            return 1
+        fi
         if ! curl -fsSL --max-time 60 "${SUBSCRIPTION_URL}" -o "${new_file}" 2>>"${LOG_FILE}"; then
-            log_msg "❌ 远程订阅拉取失败: ${SUBSCRIPTION_URL}"
+            log_msg "远程订阅拉取失败: ${SUBSCRIPTION_URL}"
             rm -f "${new_file}"
             return 1
         fi
     elif [ -n "${SUBSCRIPTION_PATH}" ] && [ -f "${SUBSCRIPTION_PATH}" ]; then
         if ! cp -f "${SUBSCRIPTION_PATH}" "${new_file}" 2>>"${LOG_FILE}"; then
-            log_msg "❌ 本地订阅复制失败: ${SUBSCRIPTION_PATH}"
+            log_msg "本地订阅复制失败: ${SUBSCRIPTION_PATH}"
             rm -f "${new_file}"
             return 1
         fi
@@ -73,13 +78,13 @@ refresh_subscription() {
     fi
 
     if [ ! -s "${new_file}" ]; then
-        log_msg "❌ 订阅内容为空，跳过"
+        log_msg "订阅内容为空，跳过"
         rm -f "${new_file}"
         return 1
     fi
 
     if ! python3 -c "import yaml; yaml.safe_load(open('${new_file}', encoding='utf-8'))" 2>/dev/null; then
-        log_msg "❌ 订阅 yaml 格式错误，跳过"
+        log_msg "订阅 yaml 格式错误，跳过"
         rm -f "${new_file}"
         return 1
     fi
@@ -90,12 +95,12 @@ refresh_subscription() {
     new_hash=$(compute_hash "${new_file}")
 
     if [ "${old_hash}" = "${new_hash}" ]; then
-        log_msg "✅ 订阅内容未变化（hash=${new_hash:0:12}…）"
+        log_msg "订阅内容未变化（hash=${new_hash:0:12}…）"
         rm -f "${new_file}"
         return 1
     fi
 
-    log_msg "🔄 检测到订阅更新（hash: ${old_hash:0:12}… → ${new_hash:0:12}…）"
+    log_msg "检测到订阅更新（hash: ${old_hash:0:12}… -> ${new_hash:0:12}…）"
     mv "${new_file}" "${VAR_DIR}/subscription.yaml"
     chmod 666 "${VAR_DIR}/subscription.yaml"
     return 0
@@ -108,7 +113,7 @@ restart_miproxy() {
             "${VAR_DIR}/base.yaml" \
             "${VAR_DIR}/subscription.yaml" \
             "${VAR_DIR}/config.yaml" >>"${LOG_FILE}" 2>&1; then
-        log_msg "❌ merge_config.py 失败，跳过重启"
+        log_msg "merge_config.py 失败，跳过重启"
         return 1
     fi
     chmod 666 "${VAR_DIR}/config.yaml"
@@ -117,7 +122,7 @@ restart_miproxy() {
     bash "${SCRIPT_DIR}/main" stop >>"${LOG_FILE}" 2>&1 || true
     sleep 2
     bash "${SCRIPT_DIR}/main" start >>"${LOG_FILE}" 2>&1
-    log_msg "✅ miproxy 已重启"
+    log_msg "miproxy 已重启"
     return 0
 }
 
@@ -128,14 +133,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-log_msg "════════════════════════════════════════"
+log_msg "=========================================="
 log_msg "订阅刷新守护进程启动"
 log_msg "  PID: $$"
 log_msg "  VAR_DIR: ${VAR_DIR}"
 log_msg "  URL: ${SUBSCRIPTION_URL:-（未设置）}"
 log_msg "  PATH: ${SUBSCRIPTION_PATH:-（未设置）}"
 log_msg "  刷新间隔: ${REFRESH_INTERVAL} 秒"
-log_msg "════════════════════════════════════════"
+log_msg "=========================================="
 
 # 启动后立即检查一次（不等第一次 tick）
 sleep 5

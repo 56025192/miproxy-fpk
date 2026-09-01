@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # MiProxy 配置变更回调
+# 修复订阅更新问题：确保停止守护进程后再重启 miproxy，避免竞争条件
 
 set -e
 
@@ -15,6 +16,7 @@ SECRET="${wizard_secret:-}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
+TUN_ENABLE="${wizard_tun_enable:-false}"
 if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
     REFRESH_INTERVAL_SEC=0
 else
@@ -39,6 +41,40 @@ remove_auth_block() {
     local file="$1"
     # 移除 "authentication:" 行及其后续的 "  - ..." 行（最多 5 行）
     sed -i ':a;N;$!ba;s/\nauthentication:\([[:space:]]*\n[[:space:]]*- "[^"]*"\)\+//g' "${file}" 2>/dev/null || true
+}
+
+# 处理 TUN 配置
+update_tun_config() {
+    local file="$1"
+    local enable="$2"
+    
+    if [ -f "${file}" ]; then
+        # 检查是否存在 tun 块
+        if grep -q "^tun:" "${file}"; then
+            # 更新现有 tun 块的 enable 字段
+            sed -i "s/^\(tun:\)/\1/" "${file}"
+            if grep -q "^  enable:" "${file}"; then
+                sed -i "s/^  enable: .*/  enable: ${enable}/" "${file}"
+            else
+                # 在 tun: 行后插入 enable 字段
+                sed -i "/^tun:/a\  enable: ${enable}" "${file}"
+            fi
+        else
+            # 在文件末尾添加 tun 块
+            echo "" >> "${file}"
+            echo "# TUN 配置" >> "${file}"
+            echo "tun:" >> "${file}"
+            echo "  enable: ${enable}" >> "${file}"
+            echo "  stack: system" >> "${file}"
+            echo "  auto-route: true" >> "${file}"
+            echo "  auto-redirect: true" >> "${file}"
+            echo "  auto-detect-interface: true" >> "${file}"
+            echo "  dns-hijack:" >> "${file}"
+            echo "    - any:53" >> "${file}"
+            echo "    - tcp://any:53" >> "${file}"
+        fi
+        log_msg "已更新 TUN 配置: enable=${enable}"
+    fi
 }
 
 if [ -f "${VAR_DIR}/base.yaml" ]; then
@@ -78,6 +114,41 @@ authentication:\\
         log_msg "已更新代理用户验证: ${PROXY_USER}"
         NEED_RESTART=1
     fi
+
+    # 处理 TUN 配置
+    if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
+        # 更新现有 TUN 配置的 enable 字段
+        if grep -q "^  enable:" "${VAR_DIR}/base.yaml"; then
+            OLD_TUN=$(grep "^  enable:" "${VAR_DIR}/base.yaml" | awk '{print $2}')
+            if [ "${OLD_TUN}" != "${TUN_ENABLE}" ]; then
+                sed -i "s/^  enable: .*/  enable: ${TUN_ENABLE}/" "${VAR_DIR}/base.yaml"
+                log_msg "已更新 TUN 配置: enable=${TUN_ENABLE}"
+                NEED_RESTART=1
+            fi
+        else
+            # 在 tun: 行后插入 enable 字段
+            sed -i "/^tun:/a\  enable: ${TUN_ENABLE}" "${VAR_DIR}/base.yaml"
+            log_msg "已添加 TUN 配置: enable=${TUN_ENABLE}"
+            NEED_RESTART=1
+        fi
+    else
+        # 在文件末尾添加 TUN 配置块
+        cat >> "${VAR_DIR}/base.yaml" << EOF
+
+# TUN 配置
+tun:
+  enable: ${TUN_ENABLE}
+  stack: system
+  auto-route: true
+  auto-redirect: true
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53
+    - tcp://any:53
+EOF
+        log_msg "已添加 TUN 配置: enable=${TUN_ENABLE}"
+        NEED_RESTART=1
+    fi
 fi
 
 # === 处理订阅更新 ===
@@ -114,13 +185,23 @@ fi
 # === 重新生成主配置 ===
 if [ "${NEED_RESTART}" = "1" ]; then
     log_msg "重新生成主配置 config.yaml..."
+    
+    # 关键修复：先停止守护进程，避免竞争条件
+    log_msg "停止订阅刷新守护进程..."
+    bash "${SCRIPT_DIR}/main" stop-refresh 2>>"${LOG_FILE}" || true
+    sleep 1
+    
+    # 合并配置
     python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
     chmod 666 "${VAR_DIR}/config.yaml"
 
     log_msg "重启 miproxy..."
+    # 先停止 miproxy
     bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
     sleep 2
+    # 再启动 miproxy
     bash "${SCRIPT_DIR}/main" start
+    sleep 1
     log_msg "miproxy 重启完成"
 fi
 
@@ -142,6 +223,13 @@ fi
 } > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
 
-bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "守护进程重启失败"
+# 最后启动守护进程（不在重启过程中启动）
+if [ "${NEED_RESTART}" = "1" ]; then
+    sleep 2
+    log_msg "启动订阅刷新守护进程..."
+    bash "${SCRIPT_DIR}/main" start-refresh 2>>"${LOG_FILE}" || log_msg "守护进程启动失败"
+else
+    bash "${SCRIPT_DIR}/main" restart-refresh 2>>"${LOG_FILE}" || log_msg "守护进程重启失败"
+fi
 
 exit 0

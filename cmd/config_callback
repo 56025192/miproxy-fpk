@@ -1,8 +1,17 @@
 #!/bin/bash
 
-# MiProxy 配置变更回调（v3 重构版）
+# MiProxy 配置变更回调（v4 重构版）
+# 关键变更：从订阅源同步 proxy-groups / rules / dns 三个字段到 config.yaml
 # 与 install_callback 一致：直接生成完整 config.yaml，绕过 merge_config.py
 # 使用 `use:` 字段引用 proxy-providers（mihomo 标准语法）
+
+# ============ 调试日志 ============
+DEBUG_LOG="${TRIM_PKGVAR}/config_callback.log"
+exec 2>>"${DEBUG_LOG}"
+echo "===== config_callback v4 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+echo "TRIM_APPDEST=${TRIM_APPDEST}" >> "${DEBUG_LOG}"
+echo "TRIM_PKGVAR=${TRIM_PKGVAR}" >> "${DEBUG_LOG}"
+echo "TRIM_PKGETC=${TRIM_PKGETC}" >> "${DEBUG_LOG}"
 
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
@@ -22,9 +31,11 @@ TUN_ENABLE="${wizard_tun_enable:-false}"
 # 从 settings.conf 读取上次保存的端口（向导未必每次都传）
 HTTP_PORT=""
 API_PORT=""
+PREV_SUB_URL=""
 if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
     HTTP_PORT=$(grep '^wizard_http_port=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
     API_PORT=$(grep '^wizard_api_port=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    PREV_SUB_URL=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
 fi
 HTTP_PORT="${HTTP_PORT:-7890}"
 API_PORT="${API_PORT:-9090}"
@@ -39,9 +50,10 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
-log_msg "config_callback v3 启动"
+log_msg "config_callback v4 启动（新增：订阅源 proxy-groups/rules/dns 同步）"
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
 log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
+log_msg "  PREV_SUB_URL=${PREV_SUB_URL:-（空）}"
 log_msg "  REFRESH_INTERVAL=${REFRESH_INTERVAL_HOURS}h (${REFRESH_INTERVAL_SEC}s)"
 log_msg "  TUN_ENABLE=${TUN_ENABLE}"
 
@@ -56,7 +68,7 @@ local)
     ;;
 esac
 
-# 从 SUB_URL 自动提取订阅源域名，加入 fake-ip-filter
+# 从 SUB_URL 自动提取订阅源域名，加入 fake-ip-filter（兜底）
 SUB_DOMAIN_FILTER=""
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
     domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
@@ -64,6 +76,102 @@ if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
         SUB_DOMAIN_FILTER="    - \"${domain}\"
     - \"*.${domain}\"
 "
+        log_msg "  订阅源域名加入 fake-ip-filter: ${domain}"
+    fi
+fi
+
+# ============ 订阅源下载与字段提取（v4 新增核心）============
+SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
+mkdir -p "${VAR_DIR}/proxy_providers"
+
+# 远程订阅：URL 变了强制重下；URL 没变看缓存是否存在
+NEED_DOWNLOAD=0
+if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
+    if [ "${PREV_SUB_URL}" != "${SUB_URL}" ]; then
+        NEED_DOWNLOAD=1
+        log_msg "  📌 订阅 URL 变更（${PREV_SUB_URL:-首次} → ${SUB_URL}），强制重新下载"
+    elif [ ! -f "${SUB_CACHE_PATH}" ]; then
+        NEED_DOWNLOAD=1
+        log_msg "  📌 订阅缓存不存在，重新下载"
+    else
+        log_msg "  ✓ 订阅 URL 未变且缓存存在，复用"
+    fi
+fi
+
+if [ "${NEED_DOWNLOAD}" = "1" ]; then
+    log_msg "下载远程订阅到 cache: ${SUB_URL}"
+    if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>>"${DEBUG_LOG}"; then
+        if [ -s "${SUB_CACHE_PATH}.tmp" ]; then
+            mv "${SUB_CACHE_PATH}.tmp" "${SUB_CACHE_PATH}"
+            sub_size=$(stat -c%s "${SUB_CACHE_PATH}" 2>/dev/null || wc -c < "${SUB_CACHE_PATH}")
+            log_msg "  ✅ 订阅下载成功: ${sub_size} bytes"
+        else
+            log_msg "  ⚠️ 订阅文件为空"
+            rm -f "${SUB_CACHE_PATH}.tmp"
+        fi
+    else
+        log_msg "  ⚠️ 订阅下载失败，使用上次缓存（如果有）"
+        rm -f "${SUB_CACHE_PATH}.tmp"
+    fi
+fi
+
+# 本地订阅：拷贝到 cache
+if [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
+    cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
+    log_msg "  ✅ 本地订阅已拷贝到 cache"
+fi
+
+# 用 Python 标准库提取 yaml 顶级块（无需 PyYAML）
+extract_yaml_block() {
+    local key="$1"
+    local file="$2"
+    python3 - "${key}" "${file}" 2>/dev/null <<'PYEOF'
+import sys
+key = sys.argv[1] + ":"
+file_path = sys.argv[2]
+try:
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+except Exception:
+    sys.exit(0)
+result = []
+in_block = False
+for line in lines:
+    stripped = line.rstrip('\n')
+    if not stripped.strip():
+        if in_block:
+            result.append(line)
+        continue
+    is_top_level = bool(stripped) and not stripped[0].isspace()
+    if is_top_level:
+        if stripped.startswith(key):
+            in_block = True
+            result.append(line)
+        elif in_block:
+            in_block = False
+    elif in_block:
+        result.append(line)
+sys.stdout.write(''.join(result))
+PYEOF
+}
+
+# 从订阅源 cache 中提取 proxy-groups / rules / dns
+SUB_PG=""
+SUB_RULES=""
+SUB_DNS=""
+if [ -f "${SUB_CACHE_PATH}" ]; then
+    SUB_PG=$(extract_yaml_block "proxy-groups" "${SUB_CACHE_PATH}")
+    SUB_RULES=$(extract_yaml_block "rules" "${SUB_CACHE_PATH}")
+    SUB_DNS=$(extract_yaml_block "dns" "${SUB_CACHE_PATH}")
+
+    log_msg "  📦 订阅源 proxy-groups: $(printf '%s' "${SUB_PG}" | wc -l) 行"
+    log_msg "  📦 订阅源 rules: $(printf '%s' "${SUB_RULES}" | wc -l) 行"
+    log_msg "  📦 订阅源 dns: $(printf '%s' "${SUB_DNS}" | wc -l) 行"
+
+    # 完整性检查：dns 块必须有 nameserver 才算完整
+    if [ -n "${SUB_DNS}" ] && ! printf '%s' "${SUB_DNS}" | grep -q "nameserver"; then
+        log_msg "  ⚠️ 订阅源 dns 块缺 nameserver，回退到本地默认 DNS"
+        SUB_DNS=""
     fi
 fi
 
@@ -72,7 +180,7 @@ log_msg "重新生成 config.yaml..."
 
 {
     echo "# MiProxy 主配置（自动重新生成于 $(date '+%Y-%m-%d %H:%M:%S')）"
-    echo "# 由 miproxy-fpk v3 config_callback 生成"
+    echo "# 由 miproxy-fpk v4 config_callback 生成"
     echo ""
     echo "mixed-port: ${HTTP_PORT}"
     echo "allow-lan: true"
@@ -158,43 +266,62 @@ log_msg "重新生成 config.yaml..."
         ;;
     esac
 
-    # proxy-groups（关键：用 use: 字段，不是 provider: 前缀）
-    echo "# 代理组"
-    echo "proxy-groups:"
-    echo "  - name: PROXY"
-    echo "    type: select"
-    if [ "${HAS_SUB}" = "1" ]; then
-        echo "    use:"
-        echo "      - subscription"
+    # ============ proxy-groups（v4：从订阅源同步）============
+    if [ -n "${SUB_PG}" ]; then
+        echo "# 代理组（来自订阅源同步）"
+        echo "${SUB_PG}"
+        echo ""
+    else
+        echo "# 代理组（本地默认）"
+        echo "proxy-groups:"
+        echo "  - name: PROXY"
+        echo "    type: select"
+        if [ "${HAS_SUB}" = "1" ]; then
+            echo "    use:"
+            echo "      - subscription"
+        fi
+        echo "    proxies:"
+        echo "      - DIRECT"
+        echo ""
     fi
-    echo "    proxies:"
-    echo "      - DIRECT"
-    echo ""
 
-    # 路由规则
-    echo "# 路由规则"
-    echo "rules:"
-    echo "  - GEOIP,CN,DIRECT"
-    echo "  - MATCH,PROXY"
-    echo ""
-
-    # DNS（关键：把订阅域名加入 fake-ip-filter）
-    echo "# DNS"
-    echo "dns:"
-    echo "  enable: true"
-    echo "  listen: 0.0.0.0:53"
-    echo "  enhanced-mode: fake-ip"
-    echo "  fake-ip-range: 198.18.0.1/16"
-    echo "  fake-ip-filter:"
-    echo "    - \"+.lan\""
-    echo "    - \"+.local\""
-    if [ -n "${SUB_DOMAIN_FILTER}" ]; then
-        echo "${SUB_DOMAIN_FILTER}"
+    # ============ rules（v4：从订阅源同步）============
+    if [ -n "${SUB_RULES}" ]; then
+        echo "# 路由规则（来自订阅源同步）"
+        echo "${SUB_RULES}"
+        echo ""
+    else
+        echo "# 路由规则（本地默认）"
+        echo "rules:"
+        echo "  - GEOIP,CN,DIRECT"
+        echo "  - MATCH,PROXY"
+        echo ""
     fi
-    echo "  nameserver:"
-    echo "    - 223.5.5.5"
-    echo "    - 119.29.29.29"
-    echo "    - 8.8.8.8"
+
+    # ============ dns（v4：从订阅源同步）============
+    if [ -n "${SUB_DNS}" ]; then
+        echo "# DNS（来自订阅源同步）"
+        echo "${SUB_DNS}"
+        echo ""
+    else
+        echo "# DNS（本地默认，含订阅域名 fake-ip 白名单）"
+        echo "dns:"
+        echo "  enable: true"
+        echo "  listen: 0.0.0.0:53"
+        echo "  enhanced-mode: fake-ip"
+        echo "  fake-ip-range: 198.18.0.1/16"
+        echo "  fake-ip-filter:"
+        echo "    - \"+.lan\""
+        echo "    - \"+.local\""
+        if [ -n "${SUB_DOMAIN_FILTER}" ]; then
+            echo "${SUB_DOMAIN_FILTER}"
+        fi
+        echo "  nameserver:"
+        echo "    - 223.5.5.5"
+        echo "    - 119.29.29.29"
+        echo "    - 8.8.8.8"
+        echo ""
+    fi
 } > "${CONFIG_FILE}"
 
 chmod 666 "${CONFIG_FILE}"
@@ -229,5 +356,5 @@ else
     log_msg "⚠️  miproxy 重启失败，配置已保存"
 fi
 
-log_msg "===== config_callback v3 完成 ====="
+log_msg "===== config_callback v4 完成 ====="
 exit 0

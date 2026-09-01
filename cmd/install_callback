@@ -123,7 +123,9 @@ if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
         AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp"
         printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
         chmod 600 "${AUTH_PASS_FILE}"
-        sed -i "/^secret:/a\\\nauthentication:\\\n  - \"${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")\"" "${VAR_DIR}/base.yaml"
+        sed -i "/^secret:/a\\
+authentication:\\
+  - \"${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")\"" "${VAR_DIR}/base.yaml"
         rm -f "${AUTH_PASS_FILE}"
     fi
 else
@@ -401,6 +403,16 @@ mkdir -p "${TRIM_PKGETC}"
     echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
 } > "${VAR_DIR}/subscription.conf"
 chmod 666 "${VAR_DIR}/subscription.conf"
+
+# ============ 启动 miproxy ============
+log_msg "启动 miproxy..."
+bash "${SCRIPT_DIR}/main" start
+sleep 1
+if bash "${SCRIPT_DIR}/main" status 2>/dev/null; then
+    log_msg "miproxy 启动成功"
+else
+    log_msg "miproxy 启动失败，请检查日志"
+fi
 
 log_msg "安装完成!"
 exit 0

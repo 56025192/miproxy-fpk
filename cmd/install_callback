@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # MiProxy 安装后回调脚本
-# 拆分基础配置和订阅，订阅可随时通过设置面板更新
+# 使用 mihomo proxy-providers 机制：订阅 URL 直接写入配置，mihomo 自动获取和解码
 
 set -e
 
-# 目录（TRIM_PKGVAR 是 var 目录本身，TRIM_APPDEST 是 app 目录）
+# 目录
 APP_DEST="${TRIM_APPDEST}"
 TARGET_DIR="${TRIM_PKGVAR}/target"
 VAR_DIR="${TRIM_PKGVAR}"
@@ -21,8 +21,8 @@ SUB_TYPE="${wizard_sub_type:-none}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
-# TUN 配置（默认为 false）
 TUN_ENABLE="${wizard_tun_enable:-false}"
+
 if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
     REFRESH_INTERVAL_SEC=0
 else
@@ -54,7 +54,7 @@ cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
 chmod +x "${TARGET_DIR}/mihomo"
 log_msg "mihomo 核心复制完成"
 
-# 复制两个面板（都复制）
+# 复制两个面板
 log_msg "复制控制面板..."
 mkdir -p "${UI_TARGET}/zashboard"
 mkdir -p "${UI_TARGET}/metacubexd"
@@ -71,24 +71,21 @@ cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
 chmod 666 "${UI_TARGET}/config"
 log_msg "桌面入口配置和图标复制完成"
 
-# ============ 安全改进：密码通过文件传递，避免 shell 变量泄露 ============
+# ============ 构建基础配置 ============
 AUTH_CONFIG=""
 AUTH_PASS_FILE=""
 if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
     AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp"
-    # 将密码写入临时文件（600 权限，仅当前用户可读）
     printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
     chmod 600 "${AUTH_PASS_FILE}"
     AUTH_CONFIG="authentication:
   - \"${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")\""
     log_msg "已启用代理用户验证: ${PROXY_USER}"
-    # 立即删除临时文件
     rm -f "${AUTH_PASS_FILE}"
 else
     log_msg "未设置代理用户验证"
 fi
 
-# 构建 secret 配置（控制面板密钥）
 if [ -n "${SECRET}" ]; then
     SECRET_CONFIG="secret: \"${SECRET}\""
     log_msg "已设置控制面板密钥"
@@ -97,7 +94,6 @@ else
     log_msg "未设置控制面板密钥"
 fi
 
-# 构建 TUN 配置
 TUN_CONFIG="tun:
   enable: ${TUN_ENABLE}
   stack: system
@@ -108,32 +104,17 @@ TUN_CONFIG="tun:
     - any:53
     - tcp://any:53"
 
-if [ "${TUN_ENABLE}" = "true" ]; then
-    log_msg "已启用 TUN 功能"
-else
-    log_msg "未启用 TUN 功能"
-fi
-
 # 写入 base.yaml
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
     log_msg "复用现有 base.yaml"
-    # 即使复用 base.yaml，也检查是否需要更新 TUN 配置
+    # 更新 TUN 配置
     if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
-        # 更新现有 TUN 配置的 enable 字段
         sed -i "s/^  enable: .*/  enable: ${TUN_ENABLE}/" "${VAR_DIR}/base.yaml"
-        log_msg "已更新 TUN 配置: enable=${TUN_ENABLE}"
-    else
-        # 在文件末尾添加 TUN 配置
-        echo "" >> "${VAR_DIR}/base.yaml"
-        echo "# TUN 配置" >> "${VAR_DIR}/base.yaml"
-        echo "${TUN_CONFIG}" >> "${VAR_DIR}/base.yaml"
-        log_msg "已添加 TUN 配置: enable=${TUN_ENABLE}"
     fi
 else
     log_msg "写入基础配置 base.yaml..."
 cat > "${VAR_DIR}/base.yaml" << EOF
 # MiProxy 基础配置（系统管理，请勿手动修改）
-# 订阅相关字段（proxies/proxy-groups/rules/proxy-providers）请在订阅文件中配置
 
 mixed-port: ${HTTP_PORT}
 allow-lan: true
@@ -156,7 +137,7 @@ external-controller-cors:
   allow-origins:
     - "*"
 
-# GEO 数据库模式（避免 miproxy 启动时联网下载）
+# GEO 数据库模式
 geodata-mode: true
 
 # TUN 配置
@@ -174,86 +155,139 @@ if [ -d "${APP_DEST}/data" ]; then
     log_msg "离线 GEO 数据库已就绪"
 fi
 
-# 写入 subscription.yaml
-log_msg "处理订阅 (类型: ${SUB_TYPE})..."
+# ============ 构建订阅配置（使用 proxy-providers）============
+log_msg "处理订阅配置 (类型: ${SUB_TYPE})..."
 SUB_FILE="${VAR_DIR}/subscription.yaml"
+
+# 构建订阅配置
+build_subscription_config() {
+    local sub_type="$1"
+    local sub_url="$2"
+    local sub_path="$3"
+    local refresh_interval="$4"
+    
+    case "${sub_type}" in
+    remote)
+        if [ -n "${sub_url}" ]; then
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 使用 proxy-providers 机制
+# mihomo 会自动从 URL 获取订阅内容并处理 base64 解码
+
+proxy-providers:
+  remote-sub:
+    type: http
+    url: "${sub_url}"
+    path: ./proxy_providers/remote-sub.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+      - provider:remote-sub
+
+rules:
+  - MATCH,PROXY
+EOF
+            log_msg "已配置远程订阅: ${sub_url}"
+        else
+            # 空订阅
+            cat > "${SUB_FILE}" << 'EOF'
+# 未配置订阅
+proxies:
+  - name: DIRECT
+    type: direct
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EOF
+            log_msg "远程订阅 URL 为空，使用空订阅"
+        fi
+        ;;
+    local)
+        if [ -n "${sub_path}" ] && [ -f "${sub_path}" ]; then
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 本地文件
+
+proxy-providers:
+  local-sub:
+    type: file
+    path: "${sub_path}"
+    interval: ${refresh_interval}
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+      - provider:local-sub
+
+rules:
+  - MATCH,PROXY
+EOF
+            log_msg "已配置本地订阅: ${sub_path}"
+        else
+            # 空订阅
+            cat > "${SUB_FILE}" << 'EOF'
+# 未配置订阅
+proxies:
+  - name: DIRECT
+    type: direct
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EOF
+            log_msg "本地订阅文件不存在，使用空订阅"
+        fi
+        ;;
+    *)
+        # 空订阅
+        cat > "${SUB_FILE}" << 'EOF'
+# 未配置订阅
+proxies:
+  - name: DIRECT
+    type: direct
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EOF
+        log_msg "未配置订阅"
+        ;;
+    esac
+    
+    chmod 666 "${SUB_FILE}"
+}
 
 if [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ -z "${SUB_URL}" ] && [ -z "${SUB_PATH}" ]; then
     log_msg "复用现有 subscription.yaml"
 elif [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ "${SUB_TYPE}" = "none" ]; then
-    log_msg "复用现有 subscription.yaml（向导未指定订阅）"
+    log_msg "复用现有 subscription.yaml"
 else
-    case "${SUB_TYPE}" in
-    remote)
-        if [ -n "${SUB_URL}" ]; then
-            log_msg "下载远程订阅: ${SUB_URL}"
-            if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}"; then
-                log_msg "远程订阅下载成功"
-            else
-                log_msg "警告: 远程订阅下载失败，使用空订阅占位"
-                cat > "${SUB_FILE}" << 'EMPTYEOF'
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
-            fi
-        else
-            log_msg "远程订阅 URL 为空，使用空订阅占位"
-            cat > "${SUB_FILE}" << 'EMPTYEOF'
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
-        fi
-        ;;
-    local)
-        if [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
-            log_msg "复制本地订阅: ${SUB_PATH}"
-            cp -f "${SUB_PATH}" "${SUB_FILE}"
-        else
-            log_msg "警告: 本地订阅文件不存在，使用空订阅占位"
-            cat > "${SUB_FILE}" << 'EMPTYEOF'
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
-        fi
-        ;;
-    *)
-        log_msg "不使用订阅，使用占位"
-        cat > "${SUB_FILE}" << 'EMPTYEOF'
-# 未配置订阅
-proxies: []
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-rules:
-  - MATCH,PROXY
-EMPTYEOF
-        ;;
-    esac
+    build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_INTERVAL_SEC}"
 fi
 
-chmod 666 "${SUB_FILE}"
-
-# 拼接主配置
+# 生成主配置
 log_msg "生成主配置 config.yaml..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
@@ -275,8 +309,7 @@ mkdir -p "${TRIM_PKGETC}"
     echo "wizard_tun_enable=${TUN_ENABLE}"
 } > "${TRIM_PKGETC}/settings.conf"
 
-# 写入刷新守护进程配置
-log_msg "写入订阅刷新守护进程配置..."
+# 写入刷新配置
 {
     echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
     echo "SUBSCRIPTION_URL=${SUB_URL}"
@@ -284,7 +317,6 @@ log_msg "写入订阅刷新守护进程配置..."
     echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
 } > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
-log_msg "守护进程配置已写入 (interval=${REFRESH_INTERVAL_SEC}s)"
 
 log_msg "安装完成!"
 exit 0

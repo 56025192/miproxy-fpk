@@ -2,6 +2,7 @@
 
 # MiProxy 配置变更回调
 # 修复订阅更新问题：确保停止守护进程后再重启 miproxy，避免竞争条件
+# 修复：订阅下载失败时不退出，确保系统处于稳定状态
 
 set -e
 
@@ -17,6 +18,7 @@ SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
 TUN_ENABLE="${wizard_tun_enable:-false}"
+
 if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
     REFRESH_INTERVAL_SEC=0
 else
@@ -32,6 +34,7 @@ log_msg "config_callback: 收到配置更新请求"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 NEED_RESTART=0
+SUBSCRIPTION_CHANGED=0
 
 # === 处理 base.yaml 更新 ===
 
@@ -156,51 +159,111 @@ SUB_FILE="${VAR_DIR}/subscription.yaml"
 
 if [ -n "${SUB_URL}" ]; then
     log_msg "下载远程订阅: ${SUB_URL}"
-    if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp"; then
-        mv "${SUB_FILE}.tmp" "${SUB_FILE}"
-        chmod 666 "${SUB_FILE}"
-        log_msg "远程订阅更新成功"
-        NEED_RESTART=1
+    if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp" 2>>"${LOG_FILE}"; then
+        # 验证下载的内容是否为有效的 YAML
+        if python3 -c "import yaml; yaml.safe_load(open('${SUB_FILE}.tmp', encoding='utf-8'))" 2>/dev/null; then
+            mv "${SUB_FILE}.tmp" "${SUB_FILE}"
+            chmod 666 "${SUB_FILE}"
+            log_msg "远程订阅更新成功"
+            SUBSCRIPTION_CHANGED=1
+        else
+            rm -f "${SUB_FILE}.tmp"
+            log_msg "远程订阅内容无效，跳过更新"
+            echo "远程订阅内容无效（YAML 格式错误）" >> "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        fi
     else
         rm -f "${SUB_FILE}.tmp"
         log_msg "远程订阅下载失败"
-        echo "远程订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
-        exit 1
+        echo "远程订阅下载失败，请检查 URL 是否正确" >> "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
     fi
 elif [ -n "${SUB_PATH}" ]; then
     if [ -f "${SUB_PATH}" ]; then
-        if [ "${SUB_PATH}" != "${SUB_FILE}" ]; then
-            cp -f "${SUB_PATH}" "${SUB_FILE}"
-            chmod 666 "${SUB_FILE}"
-            log_msg "复制本地订阅: ${SUB_PATH}"
-            NEED_RESTART=1
+        # 验证本地文件是否为有效的 YAML
+        if python3 -c "import yaml; yaml.safe_load(open('${SUB_PATH}', encoding='utf-8'))" 2>/dev/null; then
+            if [ "${SUB_PATH}" != "${SUB_FILE}" ]; then
+                cp -f "${SUB_PATH}" "${SUB_FILE}"
+                chmod 666 "${SUB_FILE}"
+                log_msg "复制本地订阅: ${SUB_PATH}"
+                SUBSCRIPTION_CHANGED=1
+            fi
+        else
+            log_msg "本地订阅文件格式无效，跳过更新"
+            echo "本地订阅文件格式无效（YAML 格式错误）" >> "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
         fi
     else
         log_msg "本地订阅文件不存在: ${SUB_PATH}"
-        echo "本地订阅文件不存在" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
-        exit 1
+        echo "本地订阅文件不存在" >> "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
     fi
+else
+    # 用户清空了订阅，设置空订阅占位
+    log_msg "清空订阅配置"
+    cat > "${SUB_FILE}" << 'EMPTYEOF'
+proxies: []
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - MATCH,PROXY
+EMPTYEOF
+    chmod 666 "${SUB_FILE}"
+    SUBSCRIPTION_CHANGED=1
+fi
+
+# 只有订阅实际变化时才触发重启
+if [ "${SUBSCRIPTION_CHANGED}" = "1" ]; then
+    NEED_RESTART=1
 fi
 
 # === 重新生成主配置 ===
 if [ "${NEED_RESTART}" = "1" ]; then
     log_msg "重新生成主配置 config.yaml..."
     
-    # 关键修复：先停止守护进程，避免竞争条件
+    # 先停止守护进程，避免竞争条件
     log_msg "停止订阅刷新守护进程..."
     bash "${SCRIPT_DIR}/main" stop-refresh 2>>"${LOG_FILE}" || true
     sleep 1
     
     # 合并配置
-    python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
-    chmod 666 "${VAR_DIR}/config.yaml"
+    if python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml" 2>>"${LOG_FILE}"; then
+        chmod 666 "${VAR_DIR}/config.yaml"
+        log_msg "配置合并成功"
+    else
+        log_msg "配置合并失败，跳过重启"
+        echo "配置合并失败" >> "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        # 即使合并失败，仍更新守护进程配置
+    fi
 
+    # 重启 miproxy
     log_msg "重启 miproxy..."
-    # 先停止 miproxy
-    bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
-    sleep 2
-    # 再启动 miproxy
-    bash "${SCRIPT_DIR}/main" start
+    
+    # 检查进程是否已停止
+    bash "${SCRIPT_DIR}/main" status 2>/dev/null
+    if [ $? -eq 0 ]; then
+        # 进程仍在运行，尝试停止
+        bash "${SCRIPT_DIR}/main" stop 2>>"${LOG_FILE}" || true
+        sleep 2
+    fi
+    
+    # 确保进程已停止
+    bash "${SCRIPT_DIR}/main" status 2>/dev/null && {
+        log_msg "警告：进程未能停止，强制终止"
+        # 获取 PID 并强制终止
+        PID_FILE="${VAR_DIR}/app.pid"
+        if [ -f "${PID_FILE}" ]; then
+            PID=$(cat "${PID_FILE}")
+            kill -9 "${PID}" 2>/dev/null || true
+            rm -f "${PID_FILE}"
+        fi
+        sleep 1
+    }
+    
+    # 启动 miproxy
+    bash "${SCRIPT_DIR}/main" start 2>>"${LOG_FILE}" || {
+        log_msg "miproxy 启动失败"
+        echo "miproxy 启动失败，请检查日志" >> "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+    }
     sleep 1
     log_msg "miproxy 重启完成"
 fi
@@ -223,7 +286,7 @@ fi
 } > "${VAR_DIR}/refresh_subscription.conf"
 chmod 666 "${VAR_DIR}/refresh_subscription.conf"
 
-# 最后启动守护进程（不在重启过程中启动）
+# 启动或重启守护进程
 if [ "${NEED_RESTART}" = "1" ]; then
     sleep 2
     log_msg "启动订阅刷新守护进程..."

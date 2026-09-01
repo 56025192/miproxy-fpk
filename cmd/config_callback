@@ -84,23 +84,16 @@ fi
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 
 if [ -n "${SUB_URL}" ]; then
-    # 强制要求 HTTPS
-    if echo "${SUB_URL}" | grep -q "^https://"; then
-        log_msg "下载远程订阅: ${SUB_URL}"
-        if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp"; then
-            mv "${SUB_FILE}.tmp" "${SUB_FILE}"
-            chmod 666 "${SUB_FILE}"
-            log_msg "远程订阅更新成功"
-            NEED_RESTART=1
-        else
-            rm -f "${SUB_FILE}.tmp"
-            log_msg "远程订阅下载失败"
-            echo "远程订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
-            exit 1
-        fi
+    log_msg "下载远程订阅: ${SUB_URL}"
+    if curl -fsSL --max-time 30 "${SUB_URL}" -o "${SUB_FILE}.tmp"; then
+        mv "${SUB_FILE}.tmp" "${SUB_FILE}"
+        chmod 666 "${SUB_FILE}"
+        log_msg "远程订阅更新成功"
+        NEED_RESTART=1
     else
-        log_msg "跳过非 HTTPS 订阅 URL: ${SUB_URL}"
-        echo "订阅 URL 必须使用 https://" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
+        rm -f "${SUB_FILE}.tmp"
+        log_msg "远程订阅下载失败"
+        echo "远程订阅下载失败" > "${TRIM_TEMP_LOGFILE:-/tmp/miproxy_config_err.log}"
         exit 1
     fi
 elif [ -n "${SUB_PATH}" ]; then

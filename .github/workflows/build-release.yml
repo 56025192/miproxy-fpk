@@ -101,7 +101,7 @@ jobs:
       - name: 下载 fnpack
         run: |
           echo "📦 下载 fnpack..."
-          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
           chmod +x /tmp/fnpack
           echo "✅ fnpack 下载完成"
 
@@ -173,7 +173,7 @@ jobs:
       - name: 下载 fnpack
         run: |
           echo "📦 下载 fnpack..."
-          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
           chmod +x /tmp/fnpack
           echo "✅ fnpack 下载完成"
 

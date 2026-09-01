@@ -59,6 +59,11 @@ miproxy-fpk/
 
 ## 版本历史
 
+- **v2.6.7** - 规范优化与问题修复
+  - 规范化 manifest 字段，符合飞牛开发规范
+  - fnpack 版本升级到 1.2.3
+  - 优化代码结构，提升可维护性
+  
 - **v2.1.6** - 代码优化与清理
   - 修复 refresh_subscription_loop.sh 硬编码路径
   - 移除不必要的 shares 配置

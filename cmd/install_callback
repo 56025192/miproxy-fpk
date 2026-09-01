@@ -3,8 +3,10 @@
 # MiProxy 安装后回调脚本
 # 使用 mihomo proxy-providers 机制：订阅 URL 直接写入配置，mihomo 自动获取和解码
 # 自动刷新由 mihomo proxy-providers 内置 interval 功能实现，无需外部守护进程
-
-set -e
+#
+# 注意：不在头部使用 set -e，因为：
+#   - 我们希望即使 main start 失败也能完成安装（配置已写入）
+#   - 各步骤独立成功/失败，不让一步错全盘失败
 
 # 目录
 APP_DEST="${TRIM_APPDEST}"
@@ -207,7 +209,6 @@ DNS_CONFIG='dns:
     - 1.1.1.1'
 
 # 构建订阅配置 - 使用正确的 type (http/file)
-# interval 由 mihomo proxy-providers 内置处理，无需外部脚本
 build_subscription_config() {
     local sub_type="$1"
     local sub_url="$2"
@@ -216,13 +217,10 @@ build_subscription_config() {
     
     case "${sub_type}" in
     remote)
-        # 远程订阅：type = http
         if [ -n "${sub_url}" ]; then
             log_msg "配置远程订阅: ${sub_url}, 刷新间隔: ${refresh_interval}s"
             cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 使用 proxy-providers 机制 (type: http)
-# mihomo 会自动从 URL 获取订阅内容并处理 base64 解码
-# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现
 
 proxy-providers:
   subscription:
@@ -278,12 +276,10 @@ EOF
         fi
         ;;
     local)
-        # 本地订阅：type = file
         if [ -n "${sub_path}" ]; then
             log_msg "配置本地订阅: ${sub_path}, 刷新间隔: ${refresh_interval}s"
             cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 本地文件 (type: file)
-# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现
 
 proxy-providers:
   subscription:
@@ -337,11 +333,9 @@ EOF
         fi
         ;;
     *)
-        # 未配置订阅：生成空配置
         log_msg "未配置订阅，生成空 proxy-providers 占位符"
         cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 暂未配置订阅
-# 用户可在控制面板中后续配置
 
 proxy-providers:
   subscription:
@@ -375,9 +369,12 @@ build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_IN
 # 生成主配置
 log_msg "生成主配置 config.yaml..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"
-chmod 666 "${VAR_DIR}/config.yaml"
-log_msg "主配置已生成"
+if python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"; then
+    chmod 666 "${VAR_DIR}/config.yaml"
+    log_msg "主配置已生成"
+else
+    log_msg "警告: 主配置生成失败，请检查 merge_config.py"
+fi
 
 # 写入 settings.conf（保存用户配置，但不写入空值）
 mkdir -p "${TRIM_PKGETC}"
@@ -387,7 +384,6 @@ mkdir -p "${TRIM_PKGETC}"
     echo "wizard_tun_enable=${TUN_ENABLE}"
     echo "wizard_sub_type=${SUB_TYPE}"
     echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
-    # 只有非空时才写入敏感信息
     [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
     [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
     [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
@@ -395,7 +391,7 @@ mkdir -p "${TRIM_PKGETC}"
     [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
 } > "${TRIM_PKGETC}/settings.conf"
 
-# 写入订阅配置（供 mihomo proxy-providers 使用）
+# 写入订阅配置
 {
     echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
     echo "SUBSCRIPTION_URL=${SUB_URL}"
@@ -404,14 +400,13 @@ mkdir -p "${TRIM_PKGETC}"
 } > "${VAR_DIR}/subscription.conf"
 chmod 666 "${VAR_DIR}/subscription.conf"
 
-# ============ 启动 miproxy ============
-log_msg "启动 miproxy..."
-bash "${SCRIPT_DIR}/main" start
-sleep 1
-if bash "${SCRIPT_DIR}/main" status 2>/dev/null; then
-    log_msg "miproxy 启动成功"
+# ============ 启动 miproxy（不强制要求成功）============
+log_msg "尝试启动 miproxy..."
+if bash "${SCRIPT_DIR}/main" start 2>>/dev/null; then
+    log_msg "miproxy 启动命令已执行"
 else
-    log_msg "miproxy 启动失败，请检查日志"
+    log_msg "警告: miproxy 启动失败，可稍后在应用中心手动启动"
+    log_msg "提示: 请查看 ${VAR_DIR}/info.log 获取详细错误"
 fi
 
 log_msg "安装完成!"

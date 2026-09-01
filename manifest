@@ -7,8 +7,7 @@
 appname               = miproxy
 version               = 2.6.10
 display_name          = MiProxy
-desc                  = MiProxy v2.6.10 - 基于 mihomo 代理核心的飞牛 NAS 应用，支持 VMess/VLess/Trojan/Shadowsocks/Hysteria2 等多种协议，提供双控制面板（Zashboard/MetaCubeXD）供选择，内置订阅管理、自动刷新、GEO 数据库，开箱即用
-⚠️ 订阅兼容性：由于订阅处理逻辑采用硬编码方式实现，应用目前仅支持 Clash 格式的订阅链接。
+desc                  = MiProxy v2.6.10 - 基于 mihomo 代理核心的飞牛 NAS 应用，支持 VMess/VLess/Trojan/Shadowsocks/Hysteria2 等多种协议，提供双控制面板（Zashboard/MetaCubeXD）供选择，内置订阅管理、自动刷新、GEO 数据库，开箱即用 (仅支持 Clash 格式订阅)
 platform              = all
 source                = thirdparty
 os_min_version        = 1.1.0

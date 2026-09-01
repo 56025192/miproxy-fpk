@@ -1,15 +1,15 @@
 name: Build FPK
 
 on:
-  # 通过 tag 触发构建（如 v2.6.7）
+  # 通过 tag 触发构建（如 v2.1.7）
   push:
     tags: ['v*']
-
+  
   # 手动触发
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (如 2.6.7)'
+        description: '版本号 (如 2.1.7)'
         required: false
         default: ''
       create_release:
@@ -60,7 +60,7 @@ jobs:
           git fetch --tags --force
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "上一个版本: ${LAST_TAG:-无}"
-
+          
           if [ -n "$LAST_TAG" ]; then
             echo "=== 变更文件 ===" > /tmp/changes.txt
             git diff ${LAST_TAG}..HEAD --name-only | head -20 >> /tmp/changes.txt
@@ -71,7 +71,7 @@ jobs:
             echo "=== 首次发布 ===" > /tmp/changes.txt
             git log -10 --oneline --format="• %s | %an | %cr" >> /tmp/changes.txt
           fi
-
+          
           CHANGES=$(cat /tmp/changes.txt)
           echo "changes<<EOF" >> $GITHUB_OUTPUT
           echo "${CHANGES}" >> $GITHUB_OUTPUT
@@ -101,23 +101,23 @@ jobs:
       - name: 下载 fnpack
         run: |
           echo "📦 下载 fnpack..."
-          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
           chmod +x /tmp/fnpack
           echo "✅ fnpack 下载完成"
 
       - name: 准备 x86_64 包
         run: |
           echo "🔧 准备 x86_64 打包目录..."
-
+          
           # 只保留 x86_64 的 mihomo（移动到正确位置）
           rm -rf app/server/arm64
           mv app/server/x86_64/mihomo app/server/mihomo
           rm -rf app/server/x86_64
-
+          
           # 修改 manifest 版本和平台
           sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
           sed -i "s/^platform.*=.*/platform              = x86/" manifest
-
+          
           # 验证
           echo "=== 目录结构 ==="
           ls -la app/server/
@@ -125,12 +125,12 @@ jobs:
           echo "=== manifest ==="
           grep -E "^version|^platform" manifest
 
-      - name: 打包 FPK + 记录日志
+      - name: 打包 FPK
         id: build-x86
         run: |
           echo "🔨 开始打包 x86_64..."
-          /tmp/fnpack build --directory . 2>&1 | tee /tmp/build-x86.log
-
+          /tmp/fnpack build --directory . 2>&1
+          
           FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then
             NEW_FPK="miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk"
@@ -138,8 +138,6 @@ jobs:
             echo "✅ FPK 打包成功: $NEW_FPK"
           else
             echo "❌ FPK 打包失败"
-            echo "=== 构建日志 ==="
-            cat /tmp/build-x86.log
             ls -la
             exit 1
           fi
@@ -149,14 +147,7 @@ jobs:
         with:
           name: miproxy-x86_64
           path: "*.fpk"
-          retention-days: 30
-
-      - name: 上传构建日志（x86_64）
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-x86_64
-          path: /tmp/build-x86.log
-          retention-days: 30
+          retention-days: 7
 
   # ==================== 构建 ARM64 FPK ====================
   build-arm:
@@ -182,23 +173,23 @@ jobs:
       - name: 下载 fnpack
         run: |
           echo "📦 下载 fnpack..."
-          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.1-linux-amd64
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
           chmod +x /tmp/fnpack
           echo "✅ fnpack 下载完成"
 
       - name: 准备 ARM64 包
         run: |
           echo "🔧 准备 ARM64 打包目录..."
-
+          
           # 只保留 ARM64 的 mihomo（移动到正确位置）
           rm -rf app/server/x86_64
           mv app/server/arm64/mihomo app/server/mihomo
           rm -rf app/server/arm64
-
+          
           # 修改 manifest 版本和平台
           sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
           sed -i "s/^platform.*=.*/platform              = arm/" manifest
-
+          
           # 验证
           echo "=== 目录结构 ==="
           ls -la app/server/
@@ -206,12 +197,12 @@ jobs:
           echo "=== manifest ==="
           grep -E "^version|^platform" manifest
 
-      - name: 打包 FPK + 记录日志
+      - name: 打包 FPK
         id: build-arm
         run: |
           echo "🔨 开始打包 ARM64..."
-          /tmp/fnpack build --directory . 2>&1 | tee /tmp/build-arm.log
-
+          /tmp/fnpack build --directory . 2>&1
+          
           FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then
             NEW_FPK="miproxy-${{ needs.changes.outputs.version }}-arm64.fpk"
@@ -219,8 +210,6 @@ jobs:
             echo "✅ FPK 打包成功: $NEW_FPK"
           else
             echo "❌ FPK 打包失败"
-            echo "=== 构建日志 ==="
-            cat /tmp/build-arm.log
             ls -la
             exit 1
           fi
@@ -230,118 +219,7 @@ jobs:
         with:
           name: miproxy-arm64
           path: "*.fpk"
-          retention-days: 30
-
-      - name: 上传构建日志（ARM64）
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-arm64
-          path: /tmp/build-arm.log
-          retention-days: 30
-
-  # ==================== 汇总构建日志 ====================
-  save-logs:
-    needs: [changes, build-x86, build-arm]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.changes.outputs.tag }}
-
-      - name: 下载 x86_64 构建日志
-        uses: actions/download-artifact@v4
-        with:
-          name: build-log-x86_64
-          path: /tmp/logs/
-          continue-on-error: true
-
-      - name: 下载 ARM64 构建日志
-        uses: actions/download-artifact@v4
-        with:
-          name: build-log-arm64
-          path: /tmp/logs/
-          continue-on-error: true
-
-      - name: 生成构建日志汇总
-        run: |
-          mkdir -p build-logs
-          TAG="${{ needs.changes.outputs.tag }}"
-          VERSION="${{ needs.changes.outputs.version }}"
-
-          # x86_64 日志
-          if [ -f /tmp/logs/build-x86.log ]; then
-            cp /tmp/logs/build-x86.log "build-logs/${TAG}-x86_64.log"
-            echo "✅ x86_64 日志: build-logs/${TAG}-x86_64.log"
-          else
-            echo "⚠️ 未找到 x86_64 构建日志"
-            echo "# x86_64 构建日志未找到" > "build-logs/${TAG}-x86_64.log"
-          fi
-
-          # ARM64 日志
-          if [ -f /tmp/logs/build-arm.log ]; then
-            cp /tmp/logs/build-arm.log "build-logs/${TAG}-arm64.log"
-            echo "✅ ARM64 日志: build-logs/${TAG}-arm64.log"
-          else
-            echo "⚠️ 未找到 ARM64 构建日志"
-            echo "# ARM64 构建日志未找到" > "build-logs/${TAG}-arm64.log"
-          fi
-
-          # 生成 JSON 汇总报告
-          cat > "build-logs/${TAG}-summary.json" << EOF
-          {
-            "version": "${VERSION}",
-            "tag": "${TAG}",
-            "build_time": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
-            "trigger": "${{ github.event_name }}",
-            "workflow_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-            "artifacts": {
-              "x86_64": {
-                "fpk": "miproxy-${VERSION}-x86_64.fpk",
-                "log": "${TAG}-x86_64.log"
-              },
-              "arm64": {
-                "fpk": "miproxy-${VERSION}-arm64.fpk",
-                "log": "${TAG}-arm64.log"
-              }
-            }
-          }
-          EOF
-          echo "✅ JSON 汇总: build-logs/${TAG}-summary.json"
-
-          echo ""
-          echo "=== 日志目录内容 ==="
-          ls -la build-logs/
-
-      - name: 提交构建日志到仓库
-        run: |
-          cd build-logs
-          git init --initial-branch=gh-pages
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add -A
-          git commit -m "ci: 保存构建日志 ${{ needs.changes.outputs.tag }}
-
-构建结果:
-- x86_64: ${{ needs.build-x86.result }}
-- ARM64: ${{ needs.build-arm.result }}
-
-触发: ${{ github.event_name }}
-时间: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-          git branch -M gh-pages
-          git push -f origin gh-pages
-          echo "✅ 构建日志已保存到 gh-pages 分支: https://github.com/${{ github.repository }}/tree/gh-pages"
-
-      - name: 上传日志到 Actions artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs-full
-          path: build-logs/
-          retention-days: 90
+          retention-days: 7
 
   # ==================== 创建草稿 Release ====================
   release:
@@ -397,12 +275,6 @@ jobs:
 
             ---
 
-            ### 🔧 构建日志
-
-            构建日志已保存至 [Actions artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-            ---
-
             ### 🔄 操作
 
             请审核变更内容，确认无误后点击 **Publish release** 发布。
@@ -426,7 +298,5 @@ jobs:
           echo "| ARM64 | miproxy-${{ needs.changes.outputs.version }}-arm64.fpk |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**草稿 Release**: ${{ steps.create_release.outputs.url }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**构建日志**: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "请审核后手动点击 **Publish release** 发布。" >> $GITHUB_STEP_SUMMARY

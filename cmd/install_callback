@@ -107,7 +107,6 @@ TUN_CONFIG="tun:
 # 写入 base.yaml
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
     log_msg "复用现有 base.yaml"
-    # 更新 TUN 配置
     if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
         sed -i "s/^  enable: .*/  enable: ${TUN_ENABLE}/" "${VAR_DIR}/base.yaml"
     fi
@@ -159,7 +158,7 @@ fi
 log_msg "处理订阅配置 (类型: ${SUB_TYPE})..."
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 
-# 构建订阅配置
+# 构建订阅配置 - 核心修复：始终生成 proxy-providers 结构
 build_subscription_config() {
     local sub_type="$1"
     local sub_url="$2"
@@ -169,6 +168,7 @@ build_subscription_config() {
     case "${sub_type}" in
     remote)
         if [ -n "${sub_url}" ]; then
+            log_msg "配置远程订阅: ${sub_url}, 刷新间隔: ${refresh_interval}s"
             cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 使用 proxy-providers 机制
 # mihomo 会自动从 URL 获取订阅内容并处理 base64 解码
@@ -194,27 +194,35 @@ proxy-groups:
 rules:
   - MATCH,PROXY
 EOF
-            log_msg "已配置远程订阅: ${sub_url}"
+            log_msg "已生成远程订阅配置 (proxy-providers)"
         else
-            # 空订阅
-            cat > "${SUB_FILE}" << 'EOF'
-# 未配置订阅
-proxies:
-  - name: DIRECT
-    type: direct
+            log_msg "远程订阅类型但 URL 为空，生成占位配置"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 远程订阅已选择但未配置 URL
+
+proxy-providers:
+  remote-sub:
+    type: http
+    url: ""
+    path: ./proxy_providers/remote-sub.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
 proxy-groups:
   - name: PROXY
     type: select
     proxies:
       - DIRECT
+
 rules:
   - MATCH,PROXY
 EOF
-            log_msg "远程订阅 URL 为空，使用空订阅"
         fi
         ;;
     local)
         if [ -n "${sub_path}" ] && [ -f "${sub_path}" ]; then
+            log_msg "配置本地订阅: ${sub_path}, 刷新间隔: ${refresh_interval}s"
             cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 本地文件
 
@@ -238,54 +246,61 @@ proxy-groups:
 rules:
   - MATCH,PROXY
 EOF
-            log_msg "已配置本地订阅: ${sub_path}"
+            log_msg "已生成本地订阅配置 (proxy-providers)"
         else
-            # 空订阅
-            cat > "${SUB_FILE}" << 'EOF'
-# 未配置订阅
-proxies:
-  - name: DIRECT
-    type: direct
+            log_msg "本地订阅类型但文件不存在，生成占位配置"
+            cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 本地订阅已选择但文件不存在
+
+proxy-providers:
+  local-sub:
+    type: file
+    path: "${sub_path}"
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
 proxy-groups:
   - name: PROXY
     type: select
     proxies:
       - DIRECT
+
 rules:
   - MATCH,PROXY
 EOF
-            log_msg "本地订阅文件不存在，使用空订阅"
         fi
         ;;
     *)
-        # 空订阅
-        cat > "${SUB_FILE}" << 'EOF'
-# 未配置订阅
-proxies:
-  - name: DIRECT
-    type: direct
+        log_msg "未配置订阅，生成空 proxy-providers 占位符"
+        cat > "${SUB_FILE}" << EOF
+# 订阅配置 - 暂未配置订阅
+
+proxy-providers:
+  remote-sub:
+    type: http
+    url: ""
+    path: ./proxy_providers/remote-sub.yaml
+    interval: ${refresh_interval}
+    health-check:
+      enable: false
+
 proxy-groups:
   - name: PROXY
     type: select
     proxies:
       - DIRECT
+
 rules:
   - MATCH,PROXY
 EOF
-        log_msg "未配置订阅"
         ;;
     esac
-    
     chmod 666 "${SUB_FILE}"
 }
 
-if [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ -z "${SUB_URL}" ] && [ -z "${SUB_PATH}" ]; then
-    log_msg "复用现有 subscription.yaml"
-elif [ "${PRESERVED}" = "1" ] && [ -f "${SUB_FILE}" ] && [ "${SUB_TYPE}" = "none" ]; then
-    log_msg "复用现有 subscription.yaml"
-else
-    build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_INTERVAL_SEC}"
-fi
+# 始终重新生成订阅配置（确保包含 proxy-providers）
+build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_INTERVAL_SEC}"
 
 # 生成主配置
 log_msg "生成主配置 config.yaml..."

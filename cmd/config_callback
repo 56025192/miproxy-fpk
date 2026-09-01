@@ -1,14 +1,16 @@
 #!/bin/bash
 
-# MiProxy 配置变更回调（v4 重构版）
-# 关键变更：从订阅源同步 proxy-groups / rules / dns 三个字段到 config.yaml
-# 与 install_callback 一致：直接生成完整 config.yaml，绕过 merge_config.py
-# 使用 `use:` 字段引用 proxy-providers（mihomo 标准语法）
+# MiProxy 配置变更回调（v5 重构版）
+# 关键变更：
+#   1. 复制订阅源 proxies 块到主 config（解决 Parse 时序问题）
+#   2. 完全同步订阅源的 proxy-groups / rules / dns / hosts 字段
+#   3. 不使用 proxy-providers 机制（订阅更新靠 callback 触发）
+# 直接在 bash 中生成完整 config.yaml（不依赖 PyYAML）
 
 # ============ 调试日志 ============
 DEBUG_LOG="${TRIM_PKGVAR}/config_callback.log"
 exec 2>>"${DEBUG_LOG}"
-echo "===== config_callback v4 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+echo "===== config_callback v5 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 echo "TRIM_APPDEST=${TRIM_APPDEST}" >> "${DEBUG_LOG}"
 echo "TRIM_PKGVAR=${TRIM_PKGVAR}" >> "${DEBUG_LOG}"
 echo "TRIM_PKGETC=${TRIM_PKGETC}" >> "${DEBUG_LOG}"
@@ -28,7 +30,7 @@ SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
 TUN_ENABLE="${wizard_tun_enable:-false}"
 
-# 从 settings.conf 读取上次保存的端口（向导未必每次都传）
+# 从 settings.conf 读取上次保存的端口和订阅 URL
 HTTP_PORT=""
 API_PORT=""
 PREV_SUB_URL=""
@@ -50,23 +52,12 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
-log_msg "config_callback v4 启动（新增：订阅源 proxy-groups/rules/dns 同步）"
+log_msg "config_callback v5 启动（修复 Parse 时序：复制订阅源 proxies 到主 config）"
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
 log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
 log_msg "  PREV_SUB_URL=${PREV_SUB_URL:-（空）}"
-log_msg "  REFRESH_INTERVAL=${REFRESH_INTERVAL_HOURS}h (${REFRESH_INTERVAL_SEC}s)"
+log_msg "  REFRESH_INTERVAL=${REFRESH_INTERVAL_HOURS}h"
 log_msg "  TUN_ENABLE=${TUN_ENABLE}"
-
-# 判断是否有订阅
-HAS_SUB=0
-case "${SUB_TYPE}" in
-remote)
-    [ -n "${SUB_URL}" ] && HAS_SUB=1
-    ;;
-local)
-    [ -n "${SUB_PATH}" ] && HAS_SUB=1
-    ;;
-esac
 
 # 从 SUB_URL 自动提取订阅源域名，加入 fake-ip-filter（兜底）
 SUB_DOMAIN_FILTER=""
@@ -80,7 +71,7 @@ if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
     fi
 fi
 
-# ============ 订阅源下载与字段提取（v4 新增核心）============
+# ============ 订阅源下载与字段提取（v5 核心）============
 SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
 mkdir -p "${VAR_DIR}/proxy_providers"
 
@@ -110,7 +101,7 @@ if [ "${NEED_DOWNLOAD}" = "1" ]; then
             rm -f "${SUB_CACHE_PATH}.tmp"
         fi
     else
-        log_msg "  ⚠️ 订阅下载失败，使用上次缓存（如果有）"
+        log_msg "  ⚠️ 订阅下载失败，将使用本地默认代理组/规则/DNS"
         rm -f "${SUB_CACHE_PATH}.tmp"
     fi
 fi
@@ -155,15 +146,21 @@ sys.stdout.write(''.join(result))
 PYEOF
 }
 
-# 从订阅源 cache 中提取 proxy-groups / rules / dns
+# 从订阅源 cache 中提取所有相关字段（v5：新增 proxies, hosts）
+SUB_PROXIES=""
+SUB_HOSTS=""
 SUB_PG=""
 SUB_RULES=""
 SUB_DNS=""
 if [ -f "${SUB_CACHE_PATH}" ]; then
+    SUB_PROXIES=$(extract_yaml_block "proxies" "${SUB_CACHE_PATH}")
+    SUB_HOSTS=$(extract_yaml_block "hosts" "${SUB_CACHE_PATH}")
     SUB_PG=$(extract_yaml_block "proxy-groups" "${SUB_CACHE_PATH}")
     SUB_RULES=$(extract_yaml_block "rules" "${SUB_CACHE_PATH}")
     SUB_DNS=$(extract_yaml_block "dns" "${SUB_CACHE_PATH}")
 
+    log_msg "  📦 订阅源 proxies: $(printf '%s' "${SUB_PROXIES}" | wc -l) 行"
+    log_msg "  📦 订阅源 hosts: $(printf '%s' "${SUB_HOSTS}" | wc -l) 行"
     log_msg "  📦 订阅源 proxy-groups: $(printf '%s' "${SUB_PG}" | wc -l) 行"
     log_msg "  📦 订阅源 rules: $(printf '%s' "${SUB_RULES}" | wc -l) 行"
     log_msg "  📦 订阅源 dns: $(printf '%s' "${SUB_DNS}" | wc -l) 行"
@@ -175,12 +172,13 @@ if [ -f "${SUB_CACHE_PATH}" ]; then
     fi
 fi
 
-# ============ 重新生成完整 config.yaml ============
+# ============ 重新生成完整 config.yaml（v5：含订阅源完整同步）============
 log_msg "重新生成 config.yaml..."
 
 {
     echo "# MiProxy 主配置（自动重新生成于 $(date '+%Y-%m-%d %H:%M:%S')）"
-    echo "# 由 miproxy-fpk v4 config_callback 生成"
+    echo "# 由 miproxy-fpk v5 config_callback 生成"
+    echo "# v5：完整同步订阅源 proxies/proxy-groups/rules/dns/hosts 字段"
     echo ""
     echo "mixed-port: ${HTTP_PORT}"
     echo "allow-lan: true"
@@ -231,42 +229,21 @@ log_msg "重新生成 config.yaml..."
     echo "    - tcp://any:53"
     echo ""
 
-    # proxy-providers
-    case "${SUB_TYPE}" in
-    remote)
-        if [ -n "${SUB_URL}" ]; then
-            echo "# 远程订阅（type=http）"
-            echo "proxy-providers:"
-            echo "  subscription:"
-            echo "    type: http"
-            echo "    url: \"${SUB_URL}\""
-            echo "    path: ./proxy_providers/subscription.yaml"
-            echo "    interval: ${REFRESH_INTERVAL_SEC}"
-            echo "    health-check:"
-            echo "      enable: true"
-            echo "      url: https://www.gstatic.com/generate_204"
-            echo "      interval: 300"
-            echo ""
-        fi
-        ;;
-    local)
-        if [ -n "${SUB_PATH}" ]; then
-            echo "# 本地订阅（type=file）"
-            echo "proxy-providers:"
-            echo "  subscription:"
-            echo "    type: file"
-            echo "    path: \"${SUB_PATH}\""
-            echo "    interval: ${REFRESH_INTERVAL_SEC}"
-            echo "    health-check:"
-            echo "      enable: true"
-            echo "      url: https://www.gstatic.com/generate_204"
-            echo "      interval: 300"
-            echo ""
-        fi
-        ;;
-    esac
+    # ============ proxies（v5 关键：复制订阅源节点列表到主 config，解决 Parse 时序问题）============
+    if [ -n "${SUB_PROXIES}" ]; then
+        echo "# 节点列表（来自订阅源同步，解决 Parse 时 mihomo 找不到节点的问题）"
+        echo "${SUB_PROXIES}"
+        echo ""
+    fi
 
-    # ============ proxy-groups（v4：从订阅源同步）============
+    # ============ hosts（v5：复制订阅源 hosts）============
+    if [ -n "${SUB_HOSTS}" ]; then
+        echo "# hosts（来自订阅源同步）"
+        echo "${SUB_HOSTS}"
+        echo ""
+    fi
+
+    # ============ proxy-groups（v5：复制订阅源代理组）============
     if [ -n "${SUB_PG}" ]; then
         echo "# 代理组（来自订阅源同步）"
         echo "${SUB_PG}"
@@ -276,16 +253,13 @@ log_msg "重新生成 config.yaml..."
         echo "proxy-groups:"
         echo "  - name: PROXY"
         echo "    type: select"
-        if [ "${HAS_SUB}" = "1" ]; then
-            echo "    use:"
-            echo "      - subscription"
-        fi
         echo "    proxies:"
         echo "      - DIRECT"
+        echo "      - REJECT"
         echo ""
     fi
 
-    # ============ rules（v4：从订阅源同步）============
+    # ============ rules（v5：复制订阅源规则）============
     if [ -n "${SUB_RULES}" ]; then
         echo "# 路由规则（来自订阅源同步）"
         echo "${SUB_RULES}"
@@ -298,7 +272,7 @@ log_msg "重新生成 config.yaml..."
         echo ""
     fi
 
-    # ============ dns（v4：从订阅源同步）============
+    # ============ dns（v5：复制订阅源 DNS，含 fake-ip 兼容性兜底）============
     if [ -n "${SUB_DNS}" ]; then
         echo "# DNS（来自订阅源同步）"
         echo "${SUB_DNS}"
@@ -356,5 +330,5 @@ else
     log_msg "⚠️  miproxy 重启失败，配置已保存"
 fi
 
-log_msg "===== config_callback v4 完成 ====="
+log_msg "===== config_callback v5 完成 ====="
 exit 0

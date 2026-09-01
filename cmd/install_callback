@@ -1,20 +1,25 @@
 #!/bin/bash
+# MiProxy 安装后回调脚本（v3 重构版）
+# 直接在 bash 中生成完整 config.yaml，避免 python yaml 库合并问题
+# 使用 `use:` 字段引用 proxy-providers（mihomo 标准语法）
 
-# MiProxy 安装后回调脚本
-# 使用 mihomo proxy-providers 机制：订阅 URL 直接写入配置，mihomo 自动获取和解码
-# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现，无需外部守护进程
-#
-# 注意：不在头部使用 set -e，因为：
-#   - 我们希望即使 main start 失败也能完成安装（配置已写入）
-#   - 各步骤独立成功/失败，不让一步错全盘失败
+# ============ 调试日志 ============
+DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
+exec 2>>"${DEBUG_LOG}"
+echo "===== install_callback v3 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+echo "TRIM_APPDEST=${TRIM_APPDEST}" >> "${DEBUG_LOG}"
+echo "TRIM_PKGVAR=${TRIM_PKGVAR}" >> "${DEBUG_LOG}"
+echo "TRIM_PKGETC=${TRIM_PKGETC}" >> "${DEBUG_LOG}"
 
-# 目录
+# ============ 路径变量 ============
 APP_DEST="${TRIM_APPDEST}"
-TARGET_DIR="${TRIM_PKGVAR}/target"
 VAR_DIR="${TRIM_PKGVAR}"
+TARGET_DIR="${VAR_DIR}/target"
 UI_TARGET="${VAR_DIR}/ui"
+CONFIG_FILE="${VAR_DIR}/config.yaml"
+LOG_FILE="${VAR_DIR}/info.log"
 
-# 向导变量
+# ============ 向导变量 ============
 PROXY_USER="${wizard_proxy_user:-}"
 PROXY_PASS="${wizard_proxy_pass:-}"
 SECRET="${wizard_secret:-}"
@@ -33,351 +38,204 @@ else
 fi
 
 log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    local msg="$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo "${msg}" | tee -a "${LOG_FILE}" >> "${DEBUG_LOG}"
 }
 
-# 创建必要目录
-mkdir -p "${TARGET_DIR}"
-mkdir -p "${VAR_DIR}"
-mkdir -p "${UI_TARGET}"
-mkdir -p "${VAR_DIR}/proxy_providers"
+log_msg "install_callback v3 启动"
+log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
+log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
+log_msg "  REFRESH_INTERVAL=${REFRESH_INTERVAL_HOURS}h (${REFRESH_INTERVAL_SEC}s)"
+log_msg "  TUN_ENABLE=${TUN_ENABLE}"
 
-# 检测是否有上次保留的数据
-PRESERVED_FLAG="${VAR_DIR}/.preserved"
-if [ -f "${PRESERVED_FLAG}" ]; then
-    log_msg "检测到上次保留的数据"
-    PRESERVED=1
-    rm -f "${PRESERVED_FLAG}"
-else
-    PRESERVED=0
-fi
+# ============ 判断是否有订阅 ============
+HAS_SUB=0
+case "${SUB_TYPE}" in
+remote)
+    [ -n "${SUB_URL}" ] && HAS_SUB=1
+    ;;
+local)
+    [ -n "${SUB_PATH}" ] && HAS_SUB=1
+    ;;
+esac
 
-# 复制 miproxy 核心
+log_msg "  HAS_SUB=${HAS_SUB}"
+
+# ============ 创建目录 ============
+mkdir -p "${TARGET_DIR}" "${VAR_DIR}/proxy_providers" "${UI_TARGET}"
+mkdir -p "${TRIM_PKGETC}" 2>/dev/null || true
+
+# ============ 复制核心 ============
 log_msg "复制 mihomo 核心..."
-cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
-chmod +x "${TARGET_DIR}/mihomo"
-log_msg "mihomo 核心复制完成"
-
-# 复制两个面板
-log_msg "复制控制面板..."
-mkdir -p "${UI_TARGET}/zashboard"
-mkdir -p "${UI_TARGET}/metacubexd"
-cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null || true
-cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null || true
-log_msg "控制面板复制完成"
-
-# 复制桌面入口配置和图标
-log_msg "复制桌面入口配置和图标..."
-mkdir -p "${UI_TARGET}/images"
-cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
-cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html" 2>/dev/null || true
-cp -f "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
-chmod 666 "${UI_TARGET}/config"
-log_msg "桌面入口配置和图标复制完成"
-
-# ============ 构建基础配置 ============
-AUTH_CONFIG=""
-if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
-    AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp"
-    printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
-    chmod 600 "${AUTH_PASS_FILE}"
-    AUTH_CONFIG="authentication:
-  - \"${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")\""
-    log_msg "已启用代理用户验证: ${PROXY_USER}"
-    rm -f "${AUTH_PASS_FILE}"
+if [ -f "${APP_DEST}/server/mihomo" ]; then
+    cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
+    chmod +x "${TARGET_DIR}/mihomo"
 else
-    log_msg "未设置代理用户验证，跳过写入"
+    log_msg "❌ 找不到 mihomo 二进制: ${APP_DEST}/server/mihomo"
 fi
 
-# 只有在非空时才写入 secret
-if [ -n "${SECRET}" ]; then
-    SECRET_CONFIG="secret: \"${SECRET}\""
-    log_msg "已设置控制面板密钥"
-else
-    SECRET_CONFIG=""
-    log_msg "未设置控制面板密钥，跳过写入"
+# ============ 复制面板 ============
+if [ -d "${APP_DEST}/ui/zashboard" ]; then
+    mkdir -p "${UI_TARGET}/zashboard"
+    cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null || true
 fi
-
-TUN_CONFIG="tun:
-  enable: ${TUN_ENABLE}
-  stack: system
-  auto-route: true
-  auto-redirect: true
-  auto-detect-interface: true
-  dns-hijack:
-    - any:53
-    - tcp://any:53"
-
-# 写入 base.yaml
-if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
-    log_msg "复用现有 base.yaml"
-    # 更新 TUN 配置
-    if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
-        sed -i "s/^  enable: .*/  enable: ${TUN_ENABLE}/" "${VAR_DIR}/base.yaml"
-    fi
-    # 有新的密钥或验证时更新
-    if [ -n "${SECRET}" ]; then
-        sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
-    fi
-    if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
-        # 移除旧的 auth 并添加新的
-        sed -i '/^authentication:/,/^[^ ]/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
-        AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp"
-        printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
-        chmod 600 "${AUTH_PASS_FILE}"
-        sed -i "/^secret:/a\\
-authentication:\\
-  - \"${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")\"" "${VAR_DIR}/base.yaml"
-        rm -f "${AUTH_PASS_FILE}"
-    fi
-else
-    log_msg "写入基础配置 base.yaml..."
-    # 构建配置块（跳过空字段）
-    CONFIG_BLOCK="# MiProxy 基础配置（系统管理，请勿手动修改）
-
-mixed-port: ${HTTP_PORT}
-allow-lan: true
-mode: rule
-log-level: info
-ipv6: false
-
-# 控制面板
-external-controller: 0.0.0.0:${API_PORT}
-external-ui: ${UI_TARGET}
-external-ui-name: zashboard"
-
-    # 只有非空时才添加 secret
-    if [ -n "${SECRET_CONFIG}" ]; then
-        CONFIG_BLOCK="${CONFIG_BLOCK}
-${SECRET_CONFIG}"
-    fi
-
-    # 只有非空时才添加 authentication
-    if [ -n "${AUTH_CONFIG}" ]; then
-        CONFIG_BLOCK="${CONFIG_BLOCK}
-
-# 代理用户验证
-${AUTH_CONFIG}"
-    fi
-
-    CONFIG_BLOCK="${CONFIG_BLOCK}
-
-# 跨域允许
-external-controller-cors:
-  allow-private-network: true
-  allow-origins:
-    - \"*\"
-
-# GEO 数据库模式
-geodata-mode: true
-
-# TUN 配置
-${TUN_CONFIG}"
-
-    echo "${CONFIG_BLOCK}" > "${VAR_DIR}/base.yaml"
-    chmod 644 "${VAR_DIR}/base.yaml"
+if [ -d "${APP_DEST}/ui/metacubexd" ]; then
+    mkdir -p "${UI_TARGET}/metacubexd"
+    cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null || true
 fi
+if [ -f "${APP_DEST}/ui/config" ]; then
+    cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
+fi
+if [ -f "${APP_DEST}/ui/index.html" ]; then
+    cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html"
+fi
+if [ -d "${APP_DEST}/ui/images" ]; then
+    mkdir -p "${UI_TARGET}/images"
+    cp -rf "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null || true
+fi
+chmod 666 "${UI_TARGET}/config" 2>/dev/null || true
 
-# 复制离线 GEO 数据库
+# ============ 复制离线 GEO 数据库 ============
 if [ -d "${APP_DEST}/data" ]; then
-    log_msg "复制离线 GEO 数据库..."
-    cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"
-    cp -f "${APP_DEST}/data/geosite.dat" "${VAR_DIR}/geosite.dat"
-    cp -f "${APP_DEST}/data/Country.mmdb" "${VAR_DIR}/Country.mmdb"
-    chmod 666 "${VAR_DIR}/geoip.dat" "${VAR_DIR}/geosite.dat" "${VAR_DIR}/Country.mmdb"
-    log_msg "离线 GEO 数据库已就绪"
+    for f in geoip.dat geosite.dat Country.mmdb; do
+        if [ -f "${APP_DEST}/data/${f}" ]; then
+            cp -f "${APP_DEST}/data/${f}" "${VAR_DIR}/${f}"
+            chmod 666 "${VAR_DIR}/${f}" 2>/dev/null || true
+        fi
+    done
 fi
 
-# ============ 构建订阅配置（使用 proxy-providers）============
-log_msg "处理订阅配置 (类型: ${SUB_TYPE})..."
-SUB_FILE="${VAR_DIR}/subscription.yaml"
+# ============ 生成完整 config.yaml ============
+log_msg "生成 config.yaml..."
 
-# DNS 配置模板
-DNS_CONFIG='dns:
-  enable: true
-  listen: 0.0.0.0:53
-  enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
-  fake-ip-filter:
-    - "+.lan"
-    - "+.local"
-  nameserver:
-    - 223.5.5.5
-    - 119.29.29.29
-  fallback:
-    - 8.8.8.8
-    - 1.1.1.1'
+{
+    echo "# MiProxy 主配置（系统管理，请勿手动修改）"
+    echo "# 由 miproxy-fpk 自动生成于 $(date '+%Y-%m-%d %H:%M:%S')"
+    echo ""
+    echo "mixed-port: ${HTTP_PORT}"
+    echo "allow-lan: true"
+    echo "mode: rule"
+    echo "log-level: info"
+    echo "ipv6: false"
+    echo ""
+    echo "# 控制面板"
+    echo "external-controller: 0.0.0.0:${API_PORT}"
+    echo "external-ui: ${UI_TARGET}"
+    echo "external-ui-name: zashboard"
+    echo ""
 
-# 构建订阅配置 - 使用正确的 type (http/file)
-build_subscription_config() {
-    local sub_type="$1"
-    local sub_url="$2"
-    local sub_path="$3"
-    local refresh_interval="$4"
-    
-    case "${sub_type}" in
+    # 密钥
+    if [ -n "${SECRET}" ]; then
+        echo "# 控制面板密钥"
+        echo "secret: \"${SECRET}\""
+        echo ""
+    fi
+
+    # 代理用户验证
+    if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+        echo "# 代理用户验证"
+        echo "authentication:"
+        echo "  - \"${PROXY_USER}:${PROXY_PASS}\""
+        echo ""
+    fi
+
+    echo "# 跨域允许"
+    echo "external-controller-cors:"
+    echo "  allow-private-network: true"
+    echo "  allow-origins:"
+    echo "    - \"*\""
+    echo ""
+    echo "# GEO 数据库"
+    echo "geodata-mode: true"
+    echo "geodata-loader: memconservative"
+    echo ""
+    echo "# TUN"
+    echo "tun:"
+    echo "  enable: ${TUN_ENABLE}"
+    echo "  stack: system"
+    echo "  auto-route: true"
+    echo "  auto-redirect: true"
+    echo "  auto-detect-interface: true"
+    echo "  dns-hijack:"
+    echo "    - any:53"
+    echo "    - tcp://any:53"
+    echo ""
+
+    # proxy-providers（mihomo 标准语法）
+    case "${SUB_TYPE}" in
     remote)
-        if [ -n "${sub_url}" ]; then
-            log_msg "配置远程订阅: ${sub_url}, 刷新间隔: ${refresh_interval}s"
-            cat > "${SUB_FILE}" << EOF
-# 订阅配置 - 使用 proxy-providers 机制 (type: http)
-
-proxy-providers:
-  subscription:
-    type: http
-    url: "${sub_url}"
-    path: ./proxy_providers/subscription.yaml
-    interval: ${refresh_interval}
-    health-check:
-      enable: true
-      url: https://www.gstatic.com/generate_204
-      interval: 300
-
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-      - provider:subscription
-
-rules:
-  - MATCH,PROXY
-
-# DNS 配置
-${DNS_CONFIG}
-EOF
-            log_msg "已生成远程订阅配置 (type: http)"
-        else
-            log_msg "远程订阅类型但 URL 为空，生成占位配置"
-            cat > "${SUB_FILE}" << EOF
-# 订阅配置 - 远程订阅已选择但未配置 URL
-
-proxy-providers:
-  subscription:
-    type: http
-    url: ""
-    path: ./proxy_providers/subscription.yaml
-    interval: ${refresh_interval}
-    health-check:
-      enable: false
-
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-
-rules:
-  - MATCH,PROXY
-
-# DNS 配置
-${DNS_CONFIG}
-EOF
+        if [ -n "${SUB_URL}" ]; then
+            echo "# 远程订阅（type=http，URL 直填）"
+            echo "proxy-providers:"
+            echo "  subscription:"
+            echo "    type: http"
+            echo "    url: \"${SUB_URL}\""
+            echo "    path: ./proxy_providers/subscription.yaml"
+            echo "    interval: ${REFRESH_INTERVAL_SEC}"
+            echo "    health-check:"
+            echo "      enable: true"
+            echo "      url: https://www.gstatic.com/generate_204"
+            echo "      interval: 300"
+            echo ""
         fi
         ;;
     local)
-        if [ -n "${sub_path}" ]; then
-            log_msg "配置本地订阅: ${sub_path}, 刷新间隔: ${refresh_interval}s"
-            cat > "${SUB_FILE}" << EOF
-# 订阅配置 - 本地文件 (type: file)
-
-proxy-providers:
-  subscription:
-    type: file
-    path: "${sub_path}"
-    interval: ${refresh_interval}
-    health-check:
-      enable: true
-      url: https://www.gstatic.com/generate_204
-      interval: 300
-
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-      - provider:subscription
-
-rules:
-  - MATCH,PROXY
-
-# DNS 配置
-${DNS_CONFIG}
-EOF
-            log_msg "已生成订阅配置 (type: file)"
-        else
-            log_msg "本地订阅类型但路径为空，生成占位配置"
-            cat > "${SUB_FILE}" << EOF
-# 订阅配置 - 本地订阅已选择但未配置路径
-
-proxy-providers:
-  subscription:
-    type: file
-    path: ""
-    interval: ${refresh_interval}
-    health-check:
-      enable: false
-
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-
-rules:
-  - MATCH,PROXY
-
-# DNS 配置
-${DNS_CONFIG}
-EOF
+        if [ -n "${SUB_PATH}" ]; then
+            echo "# 本地订阅（type=file）"
+            echo "proxy-providers:"
+            echo "  subscription:"
+            echo "    type: file"
+            echo "    path: \"${SUB_PATH}\""
+            echo "    interval: ${REFRESH_INTERVAL_SEC}"
+            echo "    health-check:"
+            echo "      enable: true"
+            echo "      url: https://www.gstatic.com/generate_204"
+            echo "      interval: 300"
+            echo ""
         fi
         ;;
-    *)
-        log_msg "未配置订阅，生成空 proxy-providers 占位符"
-        cat > "${SUB_FILE}" << EOF
-# 订阅配置 - 暂未配置订阅
-
-proxy-providers:
-  subscription:
-    type: http
-    url: ""
-    path: ./proxy_providers/subscription.yaml
-    interval: ${refresh_interval}
-    health-check:
-      enable: false
-
-proxy-groups:
-  - name: PROXY
-    type: select
-    proxies:
-      - DIRECT
-
-rules:
-  - MATCH,PROXY
-
-# DNS 配置
-${DNS_CONFIG}
-EOF
-        ;;
     esac
-    chmod 666 "${SUB_FILE}"
-}
 
-# 始终重新生成订阅配置
-build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_INTERVAL_SEC}"
+    # proxy-groups（关键修复：使用 use: 字段引用 provider）
+    echo "# 代理组"
+    echo "proxy-groups:"
+    echo "  - name: PROXY"
+    echo "    type: select"
+    if [ "${HAS_SUB}" = "1" ]; then
+        echo "    use:"
+        echo "      - subscription"
+    fi
+    echo "    proxies:"
+    echo "      - DIRECT"
+    echo ""
 
-# 生成主配置
-log_msg "生成主配置 config.yaml..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${VAR_DIR}/config.yaml"; then
-    chmod 666 "${VAR_DIR}/config.yaml"
-    log_msg "主配置已生成"
-else
-    log_msg "警告: 主配置生成失败，请检查 merge_config.py"
-fi
+    # 路由规则
+    echo "# 路由规则"
+    echo "rules:"
+    echo "  - GEOIP,CN,DIRECT"
+    echo "  - MATCH,PROXY"
+    echo ""
 
-# 写入 settings.conf（保存用户配置，但不写入空值）
-mkdir -p "${TRIM_PKGETC}"
+    # DNS
+    echo "# DNS"
+    echo "dns:"
+    echo "  enable: true"
+    echo "  listen: 0.0.0.0:53"
+    echo "  enhanced-mode: fake-ip"
+    echo "  fake-ip-range: 198.18.0.1/16"
+    echo "  fake-ip-filter:"
+    echo "    - \"+.lan\""
+    echo "    - \"+.local\""
+    echo "  nameserver:"
+    echo "    - 223.5.5.5"
+    echo "    - 119.29.29.29"
+    echo "    - 8.8.8.8"
+} > "${CONFIG_FILE}"
+
+chmod 666 "${CONFIG_FILE}"
+log_msg "✅ config.yaml 已生成 (${CONFIG_FILE})"
+
+# ============ 写入 settings.conf ============
 {
     echo "wizard_http_port=${HTTP_PORT}"
     echo "wizard_api_port=${API_PORT}"
@@ -391,23 +249,18 @@ mkdir -p "${TRIM_PKGETC}"
     [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
 } > "${TRIM_PKGETC}/settings.conf"
 
-# 写入订阅配置
-{
-    echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
-    echo "SUBSCRIPTION_URL=${SUB_URL}"
-    echo "SUBSCRIPTION_PATH=${SUB_PATH}"
-    echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
-} > "${VAR_DIR}/subscription.conf"
-chmod 666 "${VAR_DIR}/subscription.conf"
+chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null || true
 
-# ============ 启动 miproxy（不强制要求成功）============
+# ============ 启动 mihomo ============
 log_msg "尝试启动 miproxy..."
-if bash "${SCRIPT_DIR}/main" start 2>>/dev/null; then
-    log_msg "miproxy 启动命令已执行"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if bash "${SCRIPT_DIR}/main" start 2>>"${DEBUG_LOG}"; then
+    log_msg "✅ miproxy 启动成功"
 else
-    log_msg "警告: miproxy 启动失败，可稍后在应用中心手动启动"
-    log_msg "提示: 请查看 ${VAR_DIR}/info.log 获取详细错误"
+    log_msg "⚠️  miproxy 启动失败，配置文件已写入，请到应用中心手动启动"
 fi
 
-log_msg "安装完成!"
+log_msg "===== install_callback v3 完成 ====="
+
+# 不论 mihomo 启动是否成功，配置已写入则视为安装成功
 exit 0

@@ -2,6 +2,7 @@
 
 # MiProxy 安装后回调脚本
 # 使用 mihomo proxy-providers 机制：订阅 URL 直接写入配置，mihomo 自动获取和解码
+# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现，无需外部守护进程
 
 set -e
 
@@ -20,7 +21,7 @@ API_PORT="${wizard_api_port:-9090}"
 SUB_TYPE="${wizard_sub_type:-none}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
-REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-6}"
+REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
 TUN_ENABLE="${wizard_tun_enable:-false}"
 
 if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
@@ -37,6 +38,7 @@ log_msg() {
 mkdir -p "${TARGET_DIR}"
 mkdir -p "${VAR_DIR}"
 mkdir -p "${UI_TARGET}"
+mkdir -p "${VAR_DIR}/proxy_providers"
 
 # 检测是否有上次保留的数据
 PRESERVED_FLAG="${VAR_DIR}/.preserved"
@@ -73,7 +75,6 @@ log_msg "桌面入口配置和图标复制完成"
 
 # ============ 构建基础配置 ============
 AUTH_CONFIG=""
-AUTH_PASS_FILE=""
 if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
     AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp"
     printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
@@ -83,15 +84,16 @@ if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
     log_msg "已启用代理用户验证: ${PROXY_USER}"
     rm -f "${AUTH_PASS_FILE}"
 else
-    log_msg "未设置代理用户验证"
+    log_msg "未设置代理用户验证，跳过写入"
 fi
 
+# 只有在非空时才写入 secret
 if [ -n "${SECRET}" ]; then
     SECRET_CONFIG="secret: \"${SECRET}\""
     log_msg "已设置控制面板密钥"
 else
-    SECRET_CONFIG="secret: \"\""
-    log_msg "未设置控制面板密钥"
+    SECRET_CONFIG=""
+    log_msg "未设置控制面板密钥，跳过写入"
 fi
 
 TUN_CONFIG="tun:
@@ -107,13 +109,27 @@ TUN_CONFIG="tun:
 # 写入 base.yaml
 if [ "${PRESERVED}" = "1" ] && [ -f "${VAR_DIR}/base.yaml" ]; then
     log_msg "复用现有 base.yaml"
+    # 更新 TUN 配置
     if grep -q "^tun:" "${VAR_DIR}/base.yaml"; then
         sed -i "s/^  enable: .*/  enable: ${TUN_ENABLE}/" "${VAR_DIR}/base.yaml"
     fi
+    # 有新的密钥或验证时更新
+    if [ -n "${SECRET}" ]; then
+        sed -i "s/^secret: \"[^\"]*\"/secret: \"${SECRET}\"/" "${VAR_DIR}/base.yaml"
+    fi
+    if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
+        # 移除旧的 auth 并添加新的
+        sed -i '/^authentication:/,/^[^ ]/d' "${VAR_DIR}/base.yaml" 2>/dev/null || true
+        AUTH_PASS_FILE="${VAR_DIR}/.auth_tmp"
+        printf '%s' "${PROXY_PASS}" > "${AUTH_PASS_FILE}"
+        chmod 600 "${AUTH_PASS_FILE}"
+        sed -i "/^secret:/a\\\nauthentication:\\\n  - \"${PROXY_USER}:$(cat "${AUTH_PASS_FILE}")\"" "${VAR_DIR}/base.yaml"
+        rm -f "${AUTH_PASS_FILE}"
+    fi
 else
     log_msg "写入基础配置 base.yaml..."
-cat > "${VAR_DIR}/base.yaml" << EOF
-# MiProxy 基础配置（系统管理，请勿手动修改）
+    # 构建配置块（跳过空字段）
+    CONFIG_BLOCK="# MiProxy 基础配置（系统管理，请勿手动修改）
 
 mixed-port: ${HTTP_PORT}
 allow-lan: true
@@ -124,24 +140,38 @@ ipv6: false
 # 控制面板
 external-controller: 0.0.0.0:${API_PORT}
 external-ui: ${UI_TARGET}
-external-ui-name: zashboard
-${SECRET_CONFIG}
+external-ui-name: zashboard"
+
+    # 只有非空时才添加 secret
+    if [ -n "${SECRET_CONFIG}" ]; then
+        CONFIG_BLOCK="${CONFIG_BLOCK}
+${SECRET_CONFIG}"
+    fi
+
+    # 只有非空时才添加 authentication
+    if [ -n "${AUTH_CONFIG}" ]; then
+        CONFIG_BLOCK="${CONFIG_BLOCK}
 
 # 代理用户验证
-${AUTH_CONFIG}
+${AUTH_CONFIG}"
+    fi
+
+    CONFIG_BLOCK="${CONFIG_BLOCK}
 
 # 跨域允许
 external-controller-cors:
   allow-private-network: true
   allow-origins:
-    - "*"
+    - \"*\"
 
 # GEO 数据库模式
 geodata-mode: true
 
 # TUN 配置
-${TUN_CONFIG}
-EOF
+${TUN_CONFIG}"
+
+    echo "${CONFIG_BLOCK}" > "${VAR_DIR}/base.yaml"
+    chmod 644 "${VAR_DIR}/base.yaml"
 fi
 
 # 复制离线 GEO 数据库
@@ -158,7 +188,24 @@ fi
 log_msg "处理订阅配置 (类型: ${SUB_TYPE})..."
 SUB_FILE="${VAR_DIR}/subscription.yaml"
 
-# 构建订阅配置 - 核心修复：始终生成 proxy-providers 结构
+# DNS 配置模板
+DNS_CONFIG='dns:
+  enable: true
+  listen: 0.0.0.0:53
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "+.lan"
+    - "+.local"
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  fallback:
+    - 8.8.8.8
+    - 1.1.1.1'
+
+# 构建订阅配置 - 使用正确的 type (http/file)
+# interval 由 mihomo proxy-providers 内置处理，无需外部脚本
 build_subscription_config() {
     local sub_type="$1"
     local sub_url="$2"
@@ -167,17 +214,19 @@ build_subscription_config() {
     
     case "${sub_type}" in
     remote)
+        # 远程订阅：type = http
         if [ -n "${sub_url}" ]; then
             log_msg "配置远程订阅: ${sub_url}, 刷新间隔: ${refresh_interval}s"
             cat > "${SUB_FILE}" << EOF
-# 订阅配置 - 使用 proxy-providers 机制
+# 订阅配置 - 使用 proxy-providers 机制 (type: http)
 # mihomo 会自动从 URL 获取订阅内容并处理 base64 解码
+# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现
 
 proxy-providers:
-  remote-sub:
+  subscription:
     type: http
     url: "${sub_url}"
-    path: ./proxy_providers/remote-sub.yaml
+    path: ./proxy_providers/subscription.yaml
     interval: ${refresh_interval}
     health-check:
       enable: true
@@ -189,22 +238,25 @@ proxy-groups:
     type: select
     proxies:
       - DIRECT
-      - provider:remote-sub
+      - provider:subscription
 
 rules:
   - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
 EOF
-            log_msg "已生成远程订阅配置 (proxy-providers)"
+            log_msg "已生成远程订阅配置 (type: http)"
         else
             log_msg "远程订阅类型但 URL 为空，生成占位配置"
             cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 远程订阅已选择但未配置 URL
 
 proxy-providers:
-  remote-sub:
+  subscription:
     type: http
     url: ""
-    path: ./proxy_providers/remote-sub.yaml
+    path: ./proxy_providers/subscription.yaml
     interval: ${refresh_interval}
     health-check:
       enable: false
@@ -217,17 +269,22 @@ proxy-groups:
 
 rules:
   - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
 EOF
         fi
         ;;
     local)
-        if [ -n "${sub_path}" ] && [ -f "${sub_path}" ]; then
+        # 本地订阅：type = file
+        if [ -n "${sub_path}" ]; then
             log_msg "配置本地订阅: ${sub_path}, 刷新间隔: ${refresh_interval}s"
             cat > "${SUB_FILE}" << EOF
-# 订阅配置 - 本地文件
+# 订阅配置 - 本地文件 (type: file)
+# 自动刷新由 mihomo proxy-providers 内置 interval 功能实现
 
 proxy-providers:
-  local-sub:
+  subscription:
     type: file
     path: "${sub_path}"
     interval: ${refresh_interval}
@@ -241,21 +298,24 @@ proxy-groups:
     type: select
     proxies:
       - DIRECT
-      - provider:local-sub
+      - provider:subscription
 
 rules:
   - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
 EOF
-            log_msg "已生成本地订阅配置 (proxy-providers)"
+            log_msg "已生成订阅配置 (type: file)"
         else
-            log_msg "本地订阅类型但文件不存在，生成占位配置"
+            log_msg "本地订阅类型但路径为空，生成占位配置"
             cat > "${SUB_FILE}" << EOF
-# 订阅配置 - 本地订阅已选择但文件不存在
+# 订阅配置 - 本地订阅已选择但未配置路径
 
 proxy-providers:
-  local-sub:
+  subscription:
     type: file
-    path: "${sub_path}"
+    path: ""
     interval: ${refresh_interval}
     health-check:
       enable: false
@@ -268,19 +328,24 @@ proxy-groups:
 
 rules:
   - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
 EOF
         fi
         ;;
     *)
+        # 未配置订阅：生成空配置
         log_msg "未配置订阅，生成空 proxy-providers 占位符"
         cat > "${SUB_FILE}" << EOF
 # 订阅配置 - 暂未配置订阅
+# 用户可在控制面板中后续配置
 
 proxy-providers:
-  remote-sub:
+  subscription:
     type: http
     url: ""
-    path: ./proxy_providers/remote-sub.yaml
+    path: ./proxy_providers/subscription.yaml
     interval: ${refresh_interval}
     health-check:
       enable: false
@@ -293,13 +358,16 @@ proxy-groups:
 
 rules:
   - MATCH,PROXY
+
+# DNS 配置
+${DNS_CONFIG}
 EOF
         ;;
     esac
     chmod 666 "${SUB_FILE}"
 }
 
-# 始终重新生成订阅配置（确保包含 proxy-providers）
+# 始终重新生成订阅配置
 build_subscription_config "${SUB_TYPE}" "${SUB_URL}" "${SUB_PATH}" "${REFRESH_INTERVAL_SEC}"
 
 # 生成主配置
@@ -309,29 +377,30 @@ python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${SUB_FILE}" "${
 chmod 666 "${VAR_DIR}/config.yaml"
 log_msg "主配置已生成"
 
-# 写入 settings.conf
+# 写入 settings.conf（保存用户配置，但不写入空值）
 mkdir -p "${TRIM_PKGETC}"
 {
-    echo "wizard_proxy_user=${PROXY_USER}"
-    echo "wizard_proxy_pass=${PROXY_PASS}"
-    echo "wizard_secret=${SECRET}"
     echo "wizard_http_port=${HTTP_PORT}"
     echo "wizard_api_port=${API_PORT}"
-    echo "wizard_sub_type=${SUB_TYPE}"
-    echo "wizard_sub_url=${SUB_URL}"
-    echo "wizard_sub_path=${SUB_PATH}"
-    echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
     echo "wizard_tun_enable=${TUN_ENABLE}"
+    echo "wizard_sub_type=${SUB_TYPE}"
+    echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
+    # 只有非空时才写入敏感信息
+    [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
+    [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
+    [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
+    [ -n "${SUB_URL}" ] && echo "wizard_sub_url=${SUB_URL}"
+    [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
 } > "${TRIM_PKGETC}/settings.conf"
 
-# 写入刷新配置
+# 写入订阅配置（供 mihomo proxy-providers 使用）
 {
     echo "SUBSCRIPTION_TYPE=${SUB_TYPE}"
     echo "SUBSCRIPTION_URL=${SUB_URL}"
     echo "SUBSCRIPTION_PATH=${SUB_PATH}"
     echo "REFRESH_INTERVAL=${REFRESH_INTERVAL_SEC}"
-} > "${VAR_DIR}/refresh_subscription.conf"
-chmod 666 "${VAR_DIR}/refresh_subscription.conf"
+} > "${VAR_DIR}/subscription.conf"
+chmod 666 "${VAR_DIR}/subscription.conf"
 
 log_msg "安装完成!"
 exit 0

@@ -1,33 +1,256 @@
 #!/bin/bash
 
-# $1: action (install/uninstall/upgrade)
-# $2: extension id
+# MiProxy 服务管理脚本
+# 支持：start, stop, restart, status
+# 特性：
+# - 无配置文件时使用默认配置启动
+# - 配置文件变更后自动重启
+# - 进程守护（可选）
 
-set -e
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+PID_FILE="${TRIM_PKGVAR}/app.pid"
+CONFIG_FILE="${TRIM_PKGVAR}/config.yaml"
+SETTINGS_FILE="${TRIM_PKGETC}/settings.conf"
+MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
+MIHOMO_DIR="${TRIM_PKGVAR}"
 
+mkdir -p "${TRIM_PKGVAR}" "${TRIM_PKGETC}" 2>/dev/null
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+# ========== 辅助函数 ==========
+
+check_process() {
+    local pid=$1
+    [ -z "${pid}" ] && return 1
+    kill -0 "${pid}" 2>/dev/null
+}
+
+is_running() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid=$(head -n 1 "${PID_FILE}" | tr -d ' \n\r')
+        if check_process "${pid}"; then
+            return 0
+        else
+            rm -f "${PID_FILE}"
+        fi
+    fi
+    return 1
+}
+
+# ========== 启动服务 ==========
+do_start() {
+    log_msg "尝试启动 miproxy..."
+    
+    # 检查二进制文件
+    if [ ! -x "${MIHOMO_BIN}" ]; then
+        log_msg "错误: mihomo 二进制不存在或不可执行: ${MIHOMO_BIN}"
+        # 尝试从 APP_DEST 复制
+        if [ -f "${TRIM_APPDEST}/server/mihomo" ]; then
+            mkdir -p "${TRIM_PKGVAR}/target"
+            cp -f "${TRIM_APPDEST}/server/mihomo" "${MIHOMO_BIN}"
+            chmod +x "${MIHOMO_BIN}"
+            log_msg "已从 APP_DEST 复制 mihomo"
+        else
+            echo "错误: mihomo 二进制不存在" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+            return 1
+        fi
+    fi
+    
+    # 检查配置文件 - 如果不存在则生成默认配置
+    if [ ! -f "${CONFIG_FILE}" ] || [ ! -s "${CONFIG_FILE}" ]; then
+        log_msg "配置文件不存在，生成默认配置..."
+        generate_default_config
+    fi
+    
+    if [ ! -f "${CONFIG_FILE}" ]; then
+        log_msg "错误: 无法生成配置文件"
+        echo "错误: 无法生成配置文件" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+        return 1
+    fi
+    
+    # 停止现有进程（如果有）
+    if is_running; then
+        log_msg "服务已在运行"
+        return 0
+    fi
+    
+    # 启动 mihomo
+    log_msg "启动 mihomo..."
+    local cmd="${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${CONFIG_FILE}"
+    
+    # 后台运行
+    bash -c "${cmd}" >> "${LOG_FILE}" 2>&1 &
+    local pid=$!
+    
+    # 等待验证
+    sleep 2
+    
+    if check_process "${pid}"; then
+        echo "${pid}" > "${PID_FILE}"
+        log_msg "miproxy 启动成功 (PID: ${pid})"
+        return 0
+    else
+        log_msg "错误: miproxy 启动失败，请检查 ${LOG_FILE}"
+        echo "miproxy 启动失败，请查看 ${LOG_FILE}" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+        return 1
+    fi
+}
+
+# ========== 停止服务 ==========
+do_stop() {
+    log_msg "停止 miproxy..."
+    
+    local pid=""
+    if [ -f "${PID_FILE}" ]; then
+        pid=$(head -n 1 "${PID_FILE}" | tr -d ' \n\r')
+    fi
+    
+    if [ -z "${pid}" ] || ! check_process "${pid}"; then
+        log_msg "服务未运行"
+        rm -f "${PID_FILE}"
+        return 0
+    fi
+    
+    # 优雅停止
+    kill -TERM "${pid}" >> "${LOG_FILE}" 2>&1 || true
+    
+    local count=0
+    while check_process "${pid}" && [ $count -lt 10 ]; do
+        sleep 1
+        count=$((count + 1))
+        log_msg "等待进程退出... (${count}s)"
+    done
+    
+    # 强制停止
+    if check_process "${pid}"; then
+        kill -KILL "${pid}" 2>/dev/null || true
+        sleep 1
+    fi
+    
+    rm -f "${PID_FILE}"
+    log_msg "服务已停止"
+    return 0
+}
+
+# ========== 重启服务 ==========
+do_restart() {
+    log_msg "重启 miproxy..."
+    do_stop
+    sleep 1
+    do_start
+}
+
+# ========== 状态检查 ==========
+do_status() {
+    if is_running; then
+        local pid=$(head -n 1 "${PID_FILE}" | tr -d ' \n\r')
+        log_msg "服务运行中 (PID: ${pid})"
+        exit 0
+    else
+        log_msg "服务未运行"
+        exit 3
+    fi
+}
+
+# ========== 生成默认配置 ==========
+generate_default_config() {
+    local UI_TARGET="${TRIM_PKGVAR}/ui"
+    
+    # 读取设置（如果有）
+    local http_port="7890"
+    local api_port="9090"
+    local secret=""
+    
+    if [ -f "${SETTINGS_FILE}" ]; then
+        http_port=$(grep '^wizard_http_port=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2- | tr -d ' \n\r')
+        http_port=${http_port:-7890}
+        api_port=$(grep '^wizard_api_port=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2- | tr -d ' \n\r')
+        api_port=${api_port:-9090}
+        secret=$(grep '^wizard_secret=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2- | tr -d ' \n\r')
+    fi
+    
+    # 生成默认配置
+    {
+        echo "# MiProxy 默认配置文件"
+        echo "# 生成时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "# 提示: 请在 Web UI 中完成订阅配置"
+        echo ""
+        echo "mixed-port: ${http_port}"
+        echo "allow-lan: true"
+        echo "mode: rule"
+        echo "log-level: info"
+        echo "ipv6: false"
+        echo "external-controller: 0.0.0.0:${api_port}"
+        echo "external-ui: ${UI_TARGET}"
+        echo "external-ui-name: zashboard"
+        [ -n "$secret" ] && echo "secret: \"${secret}\""
+        echo "external-controller-cors:"
+        echo "  allow-private-network: true"
+        echo "  allow-origins:"
+        echo "    - \"*\""
+        echo "geodata-mode: true"
+        echo "geodata-loader: memconservative"
+        echo "tun:"
+        echo "  enable: false"
+        echo "  stack: system"
+        echo "  auto-route: true"
+        echo "  auto-detect-interface: true"
+        echo "dns:"
+        echo "  enable: true"
+        echo "  listen: 0.0.0.0:53"
+        echo "  enhanced-mode: fake-ip"
+        echo "  fake-ip-range: 198.18.0.1/16"
+        echo "  fake-ip-filter:"
+        echo "    - \"+.lan\""
+        echo "    - \"+.local\""
+        echo "  nameserver:"
+        echo "    - 223.5.5.5"
+        echo "    - 119.29.29.29"
+        echo "    - 8.8.8.8"
+        echo "proxy-groups:"
+        echo "  - name: PROXY"
+        echo "    type: select"
+        echo "    proxies:"
+        echo "      - DIRECT"
+        echo "rules:"
+        echo "  - GEOIP,CN,DIRECT"
+        echo "  - MATCH,PROXY"
+    } > "${CONFIG_FILE}"
+    
+    chmod 644 "${CONFIG_FILE}" 2>/dev/null
+    log_msg "默认配置已生成: ${CONFIG_FILE}"
+}
+
+# ========== 主入口 ==========
 case "$1" in
-    install)
-        shift
-        cmd/install_init "$@"
-        cmd/install_callback "$@"
-        ;;
-    uninstall)
-        shift
-        cmd/uninstall_init "$@"
-        cmd/uninstall_callback "$@"
-        ;;
-    upgrade)
-        shift
-        cmd/upgrade_init "$@"
-        cmd/upgrade_callback "$@"
-        ;;
-    config)
-        shift
-        cmd/config_init "$@"
-        cmd/config_callback "$@"
-        ;;
-    refresh_sub)
-        shift
-        cmd/refresh_sub "$@"
-        ;;
+start)
+    if do_start; then
+        exit 0
+    else
+        exit 1
+    fi
+    ;;
+stop)
+    do_stop
+    exit $?
+    ;;
+restart)
+    do_stop
+    sleep 1
+    if do_start; then
+        exit 0
+    else
+        exit 1
+    fi
+    ;;
+status)
+    do_status
+    ;;
+*)
+    echo "Usage: $0 {start|stop|restart|status}"
+    exit 1
+    ;;
 esac

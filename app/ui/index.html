@@ -1,87 +1,272 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <title>MiProxy - Proxy Management</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiProxy - 控制面板</title>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f5f5f5;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
         }
+        .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
         .card {
             background: white;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 16px;
+            padding: 40px;
+            color: #333;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        h1 { color: #333; }
-        .status { 
-            display: inline-block; 
-            padding: 5px 10px; 
-            border-radius: 4px;
-            font-weight: bold;
+        h1 { color: #1a1a2e; margin-bottom: 10px; font-size: 28px; }
+        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
+        
+        /* 加载状态 */
+        .loading {
+            text-align: center; padding: 60px; color: #666;
         }
-        .running { background: #4CAF50; color: white; }
-        .stopped { background: #f44336; color: white; }
-        button {
-            background: #2196F3;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #e0e0e0;
+            border-top-color: #10b981; border-radius: 50%;
+            animation: spin 1s linear infinite; margin: 0 auto 20px;
         }
-        button:hover { background: #1976D2; }
-        input, select {
-            width: 100%;
-            padding: 8px;
-            margin: 5px 0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* 页脚 */
+        .footer {
+            text-align: center; margin-top: 30px; padding-top: 20px;
+            border-top: 1px solid #eee; color: #999; font-size: 12px;
         }
+        
+        /* 服务状态 */
+        .status-badge {
+            display: inline-block; padding: 6px 16px; border-radius: 20px;
+            font-size: 12px; font-weight: 500; margin-left: 10px;
+        }
+        .status-running { background: #dcfce7; color: #16a34a; }
+        .status-stopped { background: #fee2e2; color: #dc2626; }
+        
+        /* 提示 */
+        .tips {
+            background: #f0f9f4; border-left: 4px solid #10b981; padding: 15px;
+            border-radius: 0 8px 8px 0; margin-bottom: 20px; font-size: 13px; color: #333;
+        }
+        
+        /* 首页 */
+        .panels { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .panel-card {
+            flex: 1; min-width: 200px; padding: 30px; border: 3px solid #ddd;
+            border-radius: 15px; cursor: pointer; transition: all 0.3s; text-align: center;
+            background: #f9f9f9;
+        }
+        .panel-card:hover {
+            transform: translateY(-5px); box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+        }
+        .panel-card h3 { margin-bottom: 10px; font-size: 18px; }
+        .panel-card p { color: #666; font-size: 13px; }
+        .zashboard { border-color: #10b981; }
+        .zashboard:hover { background: #f0fdf4; }
+        .metacubexd { border-color: #f59e0b; }
+        .metacubexd:hover { background: #fffbeb; }
+        .admin { border-color: #6366f1; }
+        .admin:hover { background: #eef2ff; }
+        
+        /* 登录框 */
+        .login-box {
+            max-width: 400px; margin: 100px auto; text-align: center;
+        }
+        .login-box h2 { margin-bottom: 30px; }
+        .login-error {
+            background: #fee2e2; color: #dc2626; padding: 12px; border-radius: 8px;
+            margin-bottom: 20px; font-size: 14px;
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-group input {
+            width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0;
+            border-radius: 8px; font-size: 14px;
+        }
+        .btn {
+            padding: 12px 24px; border: none; border-radius: 8px; font-size: 14px;
+            font-weight: 500; cursor: pointer; transition: all 0.3s;
+        }
+        .btn-primary { background: #10b981; color: white; width: 100%; }
+        .btn-primary:hover { background: #059669; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>MiProxy</h1>
-        <p>Status: <span id="status" class="status">Loading...</span></p>
-        <button onclick="refreshStatus()">Refresh</button>
+    <div class="container">
+        <!-- 加载状态 -->
+        <div id="loading" class="card">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>正在加载...</p>
+            </div>
+        </div>
+        
+        <!-- 登录页面 -->
+        <div id="login-page" class="card login-box" style="display:none;">
+            <h2>🔐 MiProxy 管理认证</h2>
+            <p class="subtitle">请输入管理密钥登录后台</p>
+            <div id="login-error" class="login-error" style="display:none;"></div>
+            <div class="form-group">
+                <input type="password" id="login-password" placeholder="请输入管理密钥" />
+            </div>
+            <button class="btn btn-primary" onclick="doLogin()">登 录</button>
+        </div>
+        
+        <!-- 首页 -->
+        <div id="home-page" class="card" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:30px;">
+                <div>
+                    <h1>MiProxy</h1>
+                    <p class="subtitle">mihomo 代理管理面板</p>
+                </div>
+                <div>
+                    <span id="service-status"></span>
+                </div>
+            </div>
+            
+            <div class="tips">
+                <strong>💡 提示：</strong>选择一个面板进入，或进入管理后台修改配置。
+            </div>
+            
+            <div class="panels">
+                <div class="panel-card zashboard" onclick="openPanel('zashboard')">
+                    <h3>📊 Zashboard</h3>
+                    <p>现代化界面，功能丰富</p>
+                </div>
+                <div class="panel-card metacubexd" onclick="openPanel('metacubexd')">
+                    <h3>🎛️ MetaCubeXD</h3>
+                    <p>经典 Clash 风格</p>
+                </div>
+                <div class="panel-card admin" onclick="openAdmin()">
+                    <h3>⚙️ 管理后台</h3>
+                    <p>配置管理、订阅设置</p>
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p>MiProxy v2.8.0 | mihomo 代理核心</p>
+            </div>
+        </div>
     </div>
-
-    <div class="card">
-        <h2>Configuration</h2>
-        <form id="configForm">
-            <label>Subscription URL:</label>
-            <input type="text" id="subUrl" placeholder="https://example.com/sub">
-            <button type="submit">Save</button>
-        </form>
-    </div>
-
+    
     <script>
-        async function refreshStatus() {
-            const response = await fetch('/cgi-bin/status.cgi');
-            const data = await response.json();
-            const statusEl = document.getElementById('status');
-            statusEl.textContent = data.status;
-            statusEl.className = 'status ' + data.status;
-        }
-
-        document.getElementById('configForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const subUrl = document.getElementById('subUrl').value;
-            await fetch('/cgi-bin/config.cgi', {
-                method: 'POST',
-                body: JSON.stringify({ config: subUrl })
-            });
-            alert('Config saved!');
+        // 全局状态
+        let gReinstalled = false;
+        let gSavedConfig = null;
+        
+        // ========== 初始化 ==========
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                const res = await fetch('cgi-bin/status.cgi');
+                const data = await res.json();
+                
+                if (data.installed) {
+                    // 已安装，检查是否为重装场景
+                    await checkReinstallStatus();
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('home-page').style.display = 'block';
+                    checkServiceStatus();
+                } else {
+                    window.location.href = 'install.html';
+                }
+            } catch (e) {
+                console.error('检测失败:', e);
+                window.location.href = 'install.html';
+            }
         });
-
-        refreshStatus();
+        
+        // ========== 检测重装场景 ==========
+        async function checkReinstallStatus() {
+            try {
+                const res = await fetch('cgi-bin/config.cgi?action=check_reinstall');
+                const data = await res.json();
+                
+                if (data.has_backup) {
+                    gReinstalled = true;
+                    gSavedConfig = data.config || {};
+                    console.log('检测到重装场景，保存的配置:', gSavedConfig);
+                    // 可以在这里显示恢复提示
+                }
+            } catch (e) {
+                console.error('检测重装状态失败:', e);
+            }
+        }
+        
+        // ========== 首页功能 ==========
+        async function checkServiceStatus() {
+            try {
+                const res = await fetch('cgi-bin/status.cgi?check=service');
+                const data = await res.json();
+                const statusEl = document.getElementById('service-status');
+                if (data.running) {
+                    statusEl.innerHTML = '<span class="status-badge status-running">● 运行中</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="status-badge status-stopped">○ 已停止</span>';
+                }
+            } catch (e) {
+                console.error('状态检测失败:', e);
+            }
+        }
+        
+        function openPanel(panel) {
+            if (panel === 'zashboard') {
+                window.location.href = 'zashboard/';
+            } else if (panel === 'metacubexd') {
+                window.location.href = 'metacubexd/';
+            }
+        }
+        
+        function openAdmin() {
+            if (sessionStorage.getItem('miproxy_auth')) {
+                window.location.href = 'admin.html';
+            } else {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('home-page').style.display = 'none';
+                document.getElementById('login-page').style.display = 'block';
+                document.getElementById('login-password').focus();
+            }
+        }
+        
+        // ========== 登录认证 ==========
+        async function doLogin() {
+            const password = document.getElementById('login-password').value;
+            if (!password) {
+                document.getElementById('login-error').textContent = '请输入管理密钥';
+                document.getElementById('login-error').style.display = 'block';
+                return;
+            }
+            
+            try {
+                const res = await fetch('cgi-bin/auth.cgi?action=login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    sessionStorage.setItem('miproxy_auth', 'true');
+                    window.location.href = 'admin.html';
+                } else {
+                    document.getElementById('login-error').textContent = '密钥验证失败';
+                    document.getElementById('login-error').style.display = 'block';
+                }
+            } catch (e) {
+                document.getElementById('login-error').textContent = '验证失败: ' + e.message;
+                document.getElementById('login-error').style.display = 'block';
+            }
+        }
+        
+        // 回车登录
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && document.getElementById('login-page').style.display !== 'none') {
+                doLogin();
+            }
+        });
     </script>
 </body>
 </html>

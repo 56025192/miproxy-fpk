@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiProxy - 安装向导</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            color: #333;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h2 { color: #1a1a2e; margin-bottom: 20px; font-size: 22px; }
+        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
+        
+        /* 步骤指示器 */
+        .steps { display: flex; justify-content: space-between; margin-bottom: 40px; position: relative; }
+        .steps::before {
+            content: ''; position: absolute; top: 20px; left: 0; right: 0; height: 4px;
+            background: #e0e0e0; z-index: 0;
+        }
+        .step { position: relative; z-index: 1; text-align: center; flex: 1; }
+        .step-circle {
+            width: 40px; height: 40px; border-radius: 50%; background: #e0e0e0;
+            color: #999; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 10px; font-weight: bold; transition: all 0.3s;
+        }
+        .step.active .step-circle { background: #10b981; color: white; }
+        .step-label { font-size: 12px; color: #999; }
+        .step.active .step-label { color: #10b981; font-weight: bold; }
+        
+        /* 表单样式 */
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block; margin-bottom: 8px; font-weight: 500; color: #333;
+        }
+        .form-group input, .form-group select {
+            width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0;
+            border-radius: 8px; font-size: 14px; transition: border-color 0.3s;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none; border-color: #10b981;
+        }
+        .tips {
+            background: #f0f9f4; border-left: 4px solid #10b981; padding: 15px;
+            border-radius: 0 8px 8px 0; margin-bottom: 20px; font-size: 13px; color: #333;
+        }
+        
+        /* 按钮 */
+        .btn {
+            padding: 12px 24px; border: none; border-radius: 8px; font-size: 14px;
+            font-weight: 500; cursor: pointer; transition: all 0.3s; margin-right: 10px;
+        }
+        .btn-primary { background: #10b981; color: white; }
+        .btn-primary:hover { background: #059669; }
+        .btn-secondary { background: #e0e0e0; color: #333; }
+        .btn-secondary:hover { background: #d0d0d0; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-group { display: flex; justify-content: space-between; margin-top: 30px; }
+        
+        /* 成功消息 */
+        .success-message {
+            background: #dcfce7; color: #16a34a; padding: 20px; border-radius: 12px;
+            text-align: center; margin: 20px 0;
+        }
+        .success-message h3 { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="tips">
+                <strong>📦 欢迎使用 MiProxy</strong><br>
+                首次使用需要完成基础配置。配置信息将保存到 config.yaml 文件中。
+            </div>
+            
+            <h2>快速配置</h2>
+            
+            <div class="steps">
+                <div class="step active" data-step="1">
+                    <div class="step-circle">1</div>
+                    <div class="step-label">基础设置</div>
+                </div>
+                <div class="step" data-step="2">
+                    <div class="step-circle">2</div>
+                    <div class="step-label">订阅配置</div>
+                </div>
+                <div class="step" data-step="3">
+                    <div class="step-circle">3</div>
+                    <div class="step-label">完成</div>
+                </div>
+            </div>
+            
+            <!-- 步骤1: 基础设置 -->
+            <div id="step-1" class="step-content">
+                <div class="form-group">
+                    <label>HTTP 代理端口</label>
+                    <input type="number" id="http-port" value="7890" min="1" max="65535" />
+                </div>
+                <div class="form-group">
+                    <label>API 控制端口</label>
+                    <input type="number" id="api-port" value="9090" min="1" max="65535" />
+                </div>
+                <div class="form-group">
+                    <label>管理密钥 <span style="color:#dc2626;">*</span></label>
+                    <input type="password" id="secret" placeholder="设置面板管理密钥" />
+                    <small style="color:#666;">用于登录管理后台，建议设置</small>
+                </div>
+                <div class="btn-group">
+                    <div></div>
+                    <button class="btn btn-primary" onclick="nextStep(1)">下一步 →</button>
+                </div>
+            </div>
+            
+            <!-- 步骤2: 订阅配置 -->
+            <div id="step-2" class="step-content" style="display:none;">
+                <div class="tips">
+                    订阅配置可选。稍后可在管理面板中修改。
+                </div>
+                <div class="form-group">
+                    <label>订阅类型</label>
+                    <select id="sub-type" onchange="toggleSubFields()">
+                        <option value="none">暂不配置</option>
+                        <option value="remote">远程订阅 URL</option>
+                        <option value="local">本地订阅文件</option>
+                    </select>
+                </div>
+                <div id="sub-remote" class="form-group" style="display:none;">
+                    <label>订阅 URL</label>
+                    <input type="text" id="sub-url" placeholder="https://example.com/api/v1/client/subscribe?token=xxx" />
+                </div>
+                <div id="sub-local" class="form-group" style="display:none;">
+                    <label>本地订阅文件路径</label>
+                    <input type="text" id="sub-path" placeholder="/vol1/@appshare/miproxy/sub.yaml" />
+                </div>
+                <div class="form-group">
+                    <label>自动刷新间隔</label>
+                    <select id="refresh-interval">
+                        <option value="0">关闭自动刷新</option>
+                        <option value="1">每 1 小时</option>
+                        <option value="6">每 6 小时</option>
+                        <option value="12">每 12 小时</option>
+                        <option value="24">每 24 小时</option>
+                    </select>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="prevStep(2)">← 上一步</button>
+                    <button class="btn btn-primary" onclick="nextStep(2)">下一步 →</button>
+                </div>
+            </div>
+            
+            <!-- 步骤3: 完成 -->
+            <div id="step-3" class="step-content" style="display:none;">
+                <div id="install-result"></div>
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="prevStep(3)">← 上一步</button>
+                    <button class="btn btn-primary" id="btn-install" onclick="doInstall()">完 成 安 装</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // ========== 安装向导 ==========
+        function nextStep(current) {
+            if (current === 1) {
+                const secret = document.getElementById('secret').value;
+                if (!secret) {
+                    alert('请设置管理密钥');
+                    return;
+                }
+            }
+            
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-' + current).style.display = 'none';
+            document.getElementById('step-' + (current + 1)).style.display = 'block';
+            document.querySelector('.step[data-step="' + (current + 1) + '"]').classList.add('active');
+            
+            if (current === 2) {
+                prepareInstall();
+            }
+        }
+        
+        function prevStep(current) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-' + current).style.display = 'none';
+            document.getElementById('step-' + (current - 1)).style.display = 'block';
+            document.querySelector('.step[data-step="' + (current - 1) + '"]').classList.add('active');
+        }
+        
+        function toggleSubFields() {
+            const type = document.getElementById('sub-type').value;
+            document.getElementById('sub-remote').style.display = type === 'remote' ? 'block' : 'none';
+            document.getElementById('sub-local').style.display = type === 'local' ? 'block' : 'none';
+        }
+        
+        function prepareInstall() {
+            const html = `
+                <div class="success-message">
+                    <h3>✅ 准备完成</h3>
+                    <p>配置信息：</p>
+                    <ul style="text-align:left; display:inline-block; margin:10px 0;">
+                        <li>HTTP 端口: <strong>${document.getElementById('http-port').value}</strong></li>
+                        <li>API 端口: <strong>${document.getElementById('api-port').value}</strong></li>
+                        <li>订阅类型: <strong>${document.getElementById('sub-type').value}</strong></li>
+                    </ul>
+                    <p>点击"完成安装"开始配置。</p>
+                </div>
+            `;
+            document.getElementById('install-result').innerHTML = html;
+        }
+        
+        async function doInstall() {
+            const btn = document.getElementById('btn-install');
+            btn.disabled = true;
+            btn.textContent = '安装中...';
+            
+            const config = {
+                http_port: document.getElementById('http-port').value,
+                api_port: document.getElementById('api-port').value,
+                secret: document.getElementById('secret').value,
+                sub_type: document.getElementById('sub-type').value,
+                sub_url: document.getElementById('sub-url').value,
+                sub_path: document.getElementById('sub-path').value,
+                refresh_interval: document.getElementById('refresh-interval').value
+            };
+            
+            try {
+                const res = await fetch('cgi-bin/config.cgi?action=install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    document.getElementById('install-result').innerHTML = `
+                        <div class="success-message">
+                            <h3>🎉 安装成功！</h3>
+                            <p>正在跳转到控制面板...</p>
+                        </div>
+                    `;
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 2000);
+                } else {
+                    alert('安装失败: ' + (data.error || '未知错误'));
+                    btn.disabled = false;
+                    btn.textContent = '完 成 安 装';
+                }
+            } catch (e) {
+                alert('安装失败: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = '完 成 安 装';
+            }
+        }
+    </script>
+</body>
+</html>

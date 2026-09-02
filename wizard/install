@@ -4,7 +4,33 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用<br><br>✨ 功能特性：<br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：mihomo proxy-providers 内置自动刷新<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br><br>💡 安装后可随时通过控制面板修改配置"
+        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用<br><br>✨ 功能特性：<br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：内置订阅自动刷新功能<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br><br>💡 安装后可随时通过控制面板修改配置"
+      }
+    ]
+  },
+  {
+    "stepTitle": "安装模式",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "检测到您之前卸载时保留了应用数据。选择安装模式："
+      },
+      {
+        "type": "radio",
+        "field": "wizard_install_mode",
+        "label": "安装模式",
+        "defaultValue": "quick",
+        "options": [
+          {
+            "value": "quick",
+            "label": "🚀 快速安装（推荐）— 保留原有配置，一键完成安装"
+          },
+          {
+            "value": "custom",
+            "label": "⚙️ 自定义安装 — 重新配置所有选项"
+          }
+        ],
+        "rules": [{"required": true, "message": "请选择安装模式"}]
       }
     ]
   },
@@ -21,7 +47,8 @@
         "label": "代理用户名",
         "initValue": "",
         "placeholder": "留空则不启用",
-        "rules": []
+        "rules": [],
+        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
       },
       {
         "type": "text",
@@ -29,7 +56,8 @@
         "label": "代理密码",
         "initValue": "",
         "placeholder": "留空则不启用",
-        "rules": []
+        "rules": [],
+        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
       },
       {
         "type": "text",
@@ -37,7 +65,8 @@
         "label": "面板密钥",
         "initValue": "",
         "placeholder": "留空则不启用（建议设置）",
-        "rules": []
+        "rules": [],
+        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
       }
     ]
   },
@@ -57,7 +86,8 @@
           {"value": "false", "label": "关闭（推荐）"},
           {"value": "true", "label": "启用（需要内核支持）"}
         ],
-        "rules": [{"required": true, "message": "请选择 TUN 状态"}]
+        "rules": [{"required": true, "message": "请选择 TUN 状态"}],
+        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
       }
     ]
   },
@@ -66,7 +96,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "配置代理节点订阅，支持远程订阅 URL 和本地订阅文件两种方式。<br><br>📡 远程订阅：输入订阅链接地址，mihomo 自动获取并解码<br>📁 本地订阅：指定本地 YAML 配置文件路径<br>⏱️ 自动刷新：由 mihomo proxy-providers 内置 interval 功能实现<br><br>💡 可跳过安装，后续在控制面板中配置。"
+        "helpText": "配置代理节点订阅，支持远程订阅 URL 和本地订阅文件两种方式。<br><br>📡 远程订阅：输入订阅链接地址<br>📁 本地订阅：指定本地 YAML 配置文件路径<br><br>💡 可跳过安装，后续在控制面板中配置。"
       },
       {
         "type": "radio",
@@ -78,7 +108,8 @@
           {"value": "remote", "label": "远程订阅 URL"},
           {"value": "local", "label": "本地订阅文件"}
         ],
-        "rules": [{"required": true, "message": "请选择订阅类型"}]
+        "rules": [{"required": true, "message": "请选择订阅类型"}],
+        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
       },
       {
         "type": "text",
@@ -110,7 +141,8 @@
           {"value": "12", "label": "每 12 小时"},
           {"value": "24", "label": "每 24 小时"}
         ],
-        "rules": [{"required": true, "message": "请选择刷新间隔"}]
+        "rules": [{"required": true, "message": "请选择刷新间隔"}],
+        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
       }
     ]
   }

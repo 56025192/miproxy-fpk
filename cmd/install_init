@@ -1,124 +1,89 @@
 #!/bin/bash
-# MiProxy 安装前回调脚本（v3）
+
+# MiProxy 安装前回调脚本（v4 持久化检测版）
 # 功能：
-# 1. 检测是否为重装场景（上次卸载是否保留了数据）
-# 2. 如果是重装场景，动态生成简化向导（只有确认步骤）
-# 3. 如果是首次安装，使用默认向导（完整配置）
+# 1. 检测是否为重装场景（从持久化路径读取 .preserved）
+# 2. 如果是重装场景，直接使用保存的配置完成安装
+# 3. 如果是首次安装，使用默认向导
 # 
-# 关键：必须在向导显示前完成修改，因此直接覆盖向导文件
+# 关键修复：从 /tmp/miproxy_backup/ 读取，而不是 TRIM_PKGVAR
 
 LOG_FILE="/tmp/miproxy_install_init.log"
 exec >>"${LOG_FILE}" 2>&1
 
-echo "===== install_init v3 开始: $(date '+%Y-%m-%d %H:%M:%S') ====="
+echo "===== install_init v4 开始: $(date '+%Y-%m-%d %H:%M:%S') ====="
 echo "TRIM_APPDEST=${TRIM_APPDEST:-not set}"
 echo "TRIM_PKGVAR=${TRIM_PKGVAR:-not set}"
 echo "TRIM_PKGETC=${TRIM_PKGETC:-not set}"
 
-# 定义向导文件路径（在 fpk 包解压后的目录中）
-WIZARD_FILE="${TRIM_APPDEST}/wizard/install"
+# 持久化备份目录（与 uninstall_callback 保持一致）
+BACKUP_DIR="/tmp/miproxy_backup"
+PRESERVED_FILE="${BACKUP_DIR}/.preserved"
+
+echo "检查重装场景..."
+echo "  PRESERVED_FILE=${PRESERVED_FILE}"
 
 # 检测是否为重装场景
-check_reinstall() {
-    local preserved_file="${TRIM_PKGVAR}/.preserved"
-    local settings_file="${TRIM_PKGETC}/settings.conf"
+if [ -f "${PRESERVED_FILE}" ]; then
+    echo "✅ 检测到重装场景：上次卸载时保留了数据"
     
-    echo "检查重装场景..."
-    echo "  preserved_file=${preserved_file}"
-    echo "  settings_file=${settings_file}"
+    # 读取保存的配置
+    source "${PRESERVED_FILE}"
     
-    if [ -f "${preserved_file}" ]; then
-        echo "✅ 检测到重装场景：上次卸载时保留了数据"
-        
-        # 读取保留的配置（使用默认值）
-        local proxy_user="" proxy_pass="" secret="" http_port="7890" api_port="9090"
-        local tun_enable="false" sub_type="none" sub_url="" sub_path="" refresh_interval="0"
-        
-        if [ -f "${settings_file}" ]; then
-            echo "从 settings.conf 读取配置..."
-            proxy_user=$(grep '^wizard_proxy_user=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            proxy_pass=$(grep '^wizard_proxy_pass=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            secret=$(grep '^wizard_secret=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            http_port=$(grep '^wizard_http_port=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            http_port=${http_port:-7890}
-            api_port=$(grep '^wizard_api_port=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            api_port=${api_port:-9090}
-            tun_enable=$(grep '^wizard_tun_enable=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            tun_enable=${tun_enable:-false}
-            sub_type=$(grep '^wizard_sub_type=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            sub_type=${sub_type:-none}
-            sub_url=$(grep '^wizard_sub_url=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            sub_path=$(grep '^wizard_sub_path=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            refresh_interval=$(grep '^wizard_refresh_interval=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            refresh_interval=${refresh_interval:-0}
-        fi
-        
-        echo "配置读取完成："
-        echo "  HTTP_PORT=${http_port}, API_PORT=${api_port}"
-        echo "  TUN=${tun_enable}, SUB_TYPE=${sub_type}"
-        
-        # 将配置写入临时文件，供后续脚本使用
-        local quick_config="${TRIM_PKGVAR}/.quick_config"
-        cat > "${quick_config}" << EOF
-# MiProxy 快速安装配置（自动生成）
-wizard_quick_mode=true
-wizard_http_port=${http_port}
-wizard_api_port=${api_port}
-wizard_proxy_user=${proxy_user}
-wizard_proxy_pass=${proxy_pass}
-wizard_secret=${secret}
-wizard_tun_enable=${tun_enable}
-wizard_sub_type=${sub_type}
-wizard_sub_url=${sub_url}
-wizard_sub_path=${sub_path}
-wizard_refresh_interval=${refresh_interval}
+    # 设置默认值
+    HTTP_PORT=${HTTP_PORT:-7890}
+    API_PORT=${API_PORT:-9090}
+    TUN_ENABLE=${TUN_ENABLE:-false}
+    SUB_TYPE=${SUB_TYPE:-none}
+    REFRESH_INTERVAL=${REFRESH_INTERVAL:-0}
+    
+    echo "读取到保存的配置："
+    echo "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
+    echo "  TUN_ENABLE=${TUN_ENABLE}, SUB_TYPE=${SUB_TYPE}"
+    echo "  SUB_URL=${SUB_URL:-（无）}"
+    
+    # 将配置写入环境变量文件，供 install_callback 使用
+    ENV_FILE="${TRIM_PKGVAR}/.quick_env"
+    mkdir -p "${TRIM_PKGVAR}"
+    
+    cat > "${ENV_FILE}" << EOF
+# MiProxy 快速安装环境变量（v4 自动生成）
+WIZARD_QUICK_MODE=true
+WIZARD_HTTP_PORT=${HTTP_PORT}
+WIZARD_API_PORT=${API_PORT}
+WIZARD_PROXY_USER=${PROXY_USER:-}
+WIZARD_PROXY_PASS=${PROXY_PASS:-}
+WIZARD_SECRET=${SECRET:-}
+WIZARD_TUN_ENABLE=${TUN_ENABLE}
+WIZARD_SUB_TYPE=${SUB_TYPE}
+WIZARD_SUB_URL=${SUB_URL:-}
+WIZARD_SUB_PATH=${SUB_PATH:-}
+WIZARD_REFRESH_INTERVAL=${REFRESH_INTERVAL}
 EOF
-        chmod 644 "${quick_config}" 2>/dev/null
-        echo "配置已保存到: ${quick_config}"
-        
-        # 动态生成简化向导（只有确认步骤）
-        # 确保目录存在
-        mkdir -p "${TRIM_APPDEST}/wizard"
-        
-        cat > "${WIZARD_FILE}" << 'WIZARD_EOF'
-[
-  {
-    "stepTitle": "快速安装确认",
-    "items": [
-      {
-        "type": "tips",
-        "helpText": "✅ 检测到您之前卸载时保留了应用数据<br><br>系统将使用您之前的配置进行快速安装。只需点击下方按钮即可完成安装，无需重新填写任何配置。"
-      },
-      {
-        "type": "radio",
-        "field": "wizard_confirm_quick",
-        "label": "确认安装",
-        "defaultValue": "yes",
-        "options": [
-          {"value": "yes", "label": "✅ 开始安装（使用原有配置）"}
-        ],
-        "rules": [{"required": true, "message": "请确认安装"}]
-      }
-    ]
-  }
-]
-WIZARD_EOF
-        
-        echo "✅ 快速安装向导已生成: ${WIZARD_FILE}"
-        cat "${WIZARD_FILE}"
-        echo "===== install_init 完成（快速模式） ====="
-        exit 0
-    else
-        echo "🆕 首次安装或未保留数据，使用完整向导"
-        # 确保默认向导文件存在且正确
-        if [ ! -f "${WIZARD_FILE}" ]; then
-            echo "警告：默认向导文件不存在，将创建标准向导"
-            mkdir -p "${TRIM_APPDEST}/wizard"
-        fi
-        echo "===== install_init 完成（完整模式） ====="
-        exit 0
+    chmod 644 "${ENV_FILE}" 2>/dev/null
+    echo "✅ 环境变量已保存: ${ENV_FILE}"
+    
+    # 将备份的数据恢复到 TRIM_PKGVAR
+    if [ -d "${BACKUP_DIR}/data" ]; then
+        echo "恢复备份数据到 ${TRIM_PKGVAR}..."
+        cp -r "${BACKUP_DIR}/data/"* "${TRIM_PKGVAR}/" 2>/dev/null && echo "  ✅ 数据恢复完成" || echo "  ⚠️ 部分数据恢复失败"
     fi
-}
-
-# 执行检测
-check_reinstall
+    
+    # 将备份的配置复制到 TRIM_PKGETC
+    if [ -f "${BACKUP_DIR}/settings.conf.bak" ]; then
+        mkdir -p "${TRIM_PKGETC}"
+        cp "${BACKUP_DIR}/settings.conf.bak" "${TRIM_PKGETC}/settings.conf"
+        chmod 644 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
+        echo "  ✅ 配置恢复完成"
+    fi
+    
+    # 清理备份（防止重复使用）
+    rm -f "${PRESERVED_FILE}"
+    echo "✅ 重装准备完成，install_callback 将使用保存的配置"
+    echo "===== install_init 完成（快速模式） ====="
+    exit 0
+else
+    echo "🆕 首次安装或未保留数据，使用完整向导"
+    echo "===== install_init 完成（完整模式） ====="
+    exit 0
+fi

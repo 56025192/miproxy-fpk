@@ -47,6 +47,18 @@ is_running() {
     return 1
 }
 
+# ============ 配置文件检测 ============
+
+check_config_exists() {
+    # 检查配置文件是否存在
+    if [ ! -f "${MIHOMO_CONFIG}" ]; then
+        log_msg "配置文件不存在: ${MIHOMO_CONFIG}"
+        log_msg "请先在 Web UI 中完成首次配置"
+        return 1
+    fi
+    return 0
+}
+
 # ============ 订阅刷新守护进程管理 ============
 
 start_refresh_daemon() {
@@ -132,13 +144,17 @@ start_process() {
         return 0
     fi
 
-    # 启动前先校验二进制和配置文件
-    if [ ! -x "${MIHOMO_BIN}" ]; then
-        log_msg "错误: mihomo 二进制不存在或不可执行: ${MIHOMO_BIN}"
+    # ============ 关键修复：启动前检查配置文件 ============
+    if ! check_config_exists; then
+        log_msg "错误: 配置文件不存在，无法启动 miproxy"
+        log_msg "请先在 Web UI 中完成首次配置"
+        echo "miproxy 配置文件不存在，请先在 Web UI 中完成首次配置" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
         return 1
     fi
-    if [ ! -f "${MIHOMO_CONFIG}" ]; then
-        log_msg "错误: mihomo 配置文件不存在: ${MIHOMO_CONFIG}"
+
+    # 启动前校验二进制文件
+    if [ ! -x "${MIHOMO_BIN}" ]; then
+        log_msg "错误: mihomo 二进制不存在或不可执行: ${MIHOMO_BIN}"
         return 1
     fi
 
@@ -206,7 +222,7 @@ start)
         exit 0
     else
         # 把错误写到 fnOS 能识别的地方
-        echo "miproxy 启动失败，请查看 ${LOG_FILE}" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+        echo "miproxy 启动失败，请先在 Web UI 中完成首次配置" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
         exit 1
     fi
     ;;

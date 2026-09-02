@@ -5,9 +5,9 @@
 # - os_max_version: 空值表示暂无明确兼容上限；填写具体版本表示最高兼容版本
 
 appname               = miproxy
-version               = 2.6.15
+version               = 2.6.16
 display_name          = MiProxy
-desc                  = MiProxy v2.6.15 - 基于 mihomo 代理核心的飞牛 NAS 应用，支持 VMess/VLess/Trojan/Shadowsocks/Hysteria2 等多种协议，提供双控制面板（Zashboard/MetaCubeXD）供选择，内置订阅管理（proxy-providers）、GEO 数据库，开箱即用 (仅支持 Clash 格式订阅)
+desc                  = MiProxy v2.6.16 - 基于 mihomo 代理核心的飞牛 NAS 应用，支持 VMess/VLess/Trojan/Shadowsocks/Hysteria2 等多种协议，提供双控制面板（Zashboard/MetaCubeXD）供选择，内置订阅管理（proxy-providers）、GEO 数据库，开箱即用，支持卸载后重装的差异化处理逻辑 (仅支持 Clash 格式订阅)
 platform              = all
 source                = thirdparty
 os_min_version        = 1.1.0
@@ -22,4 +22,4 @@ startup               = true
 service_port          = 9090
 desktop_uidir         = ui
 desktop_applaunchname = miproxy.dashboard
-changelog           = v2.6.15: 修复订阅字段同步不全 BUG | 恢复订阅定时刷新守护进程 | 完整同步 bypass/proxy-providers/rule-providers 等字段 | v2.6.14: 重构订阅机制使用 proxy-providers | v2.6.13: 修复订阅 base64 解码问题
+changelog           = v2.6.16: 支持卸载后重装的差异化处理逻辑 | v2.6.15: 修复订阅字段同步不全 BUG | v2.6.14: 重构订阅机制使用 proxy-providers

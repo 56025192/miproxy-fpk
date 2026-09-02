@@ -1,33 +1,26 @@
 #!/bin/bash
 
-# MiProxy 卸载后回调（v3 持久化标记版）
-# 职责：根据用户选择保留或彻底删除所有 miproxy 相关文件
-# 
-# 关键修复：使用持久化路径保存保留标记
-# - 将 .preserved 和配置备份保存在 /tmp/miproxy_backup/（不会被 fnOS 清理）
-# - 重新安装时从此路径读取，绕过 TRIM_PKGVAR 可能被重置的问题
+# MiProxy 卸载后回调脚本（简化版 v4）
+# 职责：
+# 1. 保留数据：将配置备份到持久化位置
+# 2. 删除数据：清理所有文件
 
 DATA_ACTION="${wizard_data_action:-keep}"
 LOG_FILE="/tmp/miproxy_uninstall.log"
+
 exec >>"${LOG_FILE}" 2>&1
 
 echo ""
 echo "=========================================="
-echo "$(date '+%Y-%m-%d %H:%M:%S') uninstall_callback v3: 用户选择=${DATA_ACTION}"
+echo "$(date '+%Y-%m-%d %H:%M:%S') uninstall_callback: 用户选择=${DATA_ACTION}"
 echo "=========================================="
 
-# 持久化备份目录（使用 /tmp 而非 TRIM_PKGVAR，因为后者可能被重置）
 BACKUP_DIR="/tmp/miproxy_backup"
-mkdir -p "${BACKUP_DIR}"
 
 # 收集需要清理的路径
 CLEAN_PATHS=(
     "${TRIM_PKGVAR}"
     "${TRIM_PKGETC}"
-    "/vol1/@apphome/miproxy"
-    "/vol1/@appcenter/miproxy"
-    "/var/apps/miproxy"
-    "/tmp/appcenter/miproxy"
 )
 
 # 添加数据共享目录
@@ -39,12 +32,9 @@ if [ -n "${TRIM_DATA_SHARE_PATHS}" ]; then
 fi
 
 if [ "${DATA_ACTION}" = "delete" ]; then
+    # ========== 删除数据模式 ==========
     echo "完整删除模式：清理所有 miproxy 残留..."
     
-    # 删除持久化备份
-    rm -rf "${BACKUP_DIR}" 2>/dev/null
-    echo "已删除持久化备份: ${BACKUP_DIR}"
-
     for path in "${CLEAN_PATHS[@]}"; do
         if [ -e "${path}" ]; then
             if rm -rf "${path}" 2>/dev/null; then
@@ -54,117 +44,59 @@ if [ "${DATA_ACTION}" = "delete" ]; then
             fi
         fi
     done
-
-    # 清理 appcenter 数据库记录
-    if command -v psql >/dev/null 2>&1; then
-        if PGPASSWORD="" psql -U postgres -d appcenter -c "DELETE FROM app WHERE app_name='miproxy';" >/dev/null 2>&1; then
-            echo "已清理 appcenter 数据库"
-        else
-            echo "appcenter 数据库清理失败（不影响卸载）"
-        fi
+    
+    # 清理备份目录
+    if [ -d "${BACKUP_DIR}" ]; then
+        rm -rf "${BACKUP_DIR}"
+        echo "已清理备份目录: ${BACKUP_DIR}"
     fi
-
-    # 确保无进程残留
-    REMAINING=$(pgrep -x mihomo 2>/dev/null || true)
-    if [ -n "${REMAINING}" ]; then
-        echo "卸载后发现残留进程: ${REMAINING}，最终杀掉"
-        pkill -KILL -x mihomo 2>/dev/null || true
-    fi
-
+    
+    # 清理进程
+    pkill -KILL -x mihomo 2>/dev/null || true
+    echo "进程已清理"
+    
     echo "完整删除完成"
+    
 else
-    echo "保留数据模式：备份配置到持久化位置..."
-
-    # 读取当前订阅配置信息
-    local sub_type="none"
-    local sub_url=""
-    local sub_path=""
-    local proxy_user=""
-    local proxy_pass=""
-    local secret=""
-    local http_port="7890"
-    local api_port="9090"
-    local tun_enable="false"
-    local refresh_interval="0"
+    # ========== 保留数据模式 ==========
+    echo "保留数据模式：备份配置到 ${BACKUP_DIR}..."
     
-    if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
-        echo "从 settings.conf 读取配置..."
-        sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "none")
-        sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "")
-        sub_path=$(grep '^wizard_sub_path=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "")
-        proxy_user=$(grep '^wizard_proxy_user=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "")
-        proxy_pass=$(grep '^wizard_proxy_pass=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "")
-        secret=$(grep '^wizard_secret=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "")
-        http_port=$(grep '^wizard_http_port=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "7890")
-        api_port=$(grep '^wizard_api_port=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "9090")
-        tun_enable=$(grep '^wizard_tun_enable=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "false")
-        refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r' || echo "0")
-    fi
+    # 确保备份目录存在
+    mkdir -p "${BACKUP_DIR}"
     
-    # 写入持久化标记文件（关键修复！）
-    cat > "${BACKUP_DIR}/.preserved" << EOF
-# MiProxy 数据保留标记文件（v3 持久化版）
-# 保留时间: $(date '+%Y-%m-%d %H:%M:%S')
-# 卸载模式: keep（保留数据）
-# 备份位置: ${BACKUP_DIR}
-PRESERVED=true
-PRESERVED_TIME=$(date '+%Y-%m-%d %H:%M:%S')
-
-# 以下是保存的配置
-SUB_TYPE=${sub_type}
-SUB_URL=${sub_url}
-SUB_PATH=${sub_path}
-PROXY_USER=${proxy_user}
-PROXY_PASS=${proxy_pass}
-SECRET=${secret}
-HTTP_PORT=${http_port}
-API_PORT=${api_port}
-TUN_ENABLE=${tun_enable}
-REFRESH_INTERVAL=${refresh_interval}
-EOF
-    echo "✅ 已创建持久化标记: ${BACKUP_DIR}/.preserved"
-
-    # 复制配置和数据文件到备份目录
-    if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
-        cp "${TRIM_PKGETC}/settings.conf" "${BACKUP_DIR}/settings.conf.bak"
-        echo "  ✅ 已备份 settings.conf"
-    fi
-    
+    # 备份配置文件
     if [ -f "${TRIM_PKGVAR}/config.yaml" ]; then
-        mkdir -p "${BACKUP_DIR}/data"
-        cp "${TRIM_PKGVAR}/config.yaml" "${BACKUP_DIR}/data/config.yaml"
-        echo "  ✅ 已备份 config.yaml"
+        cp -f "${TRIM_PKGVAR}/config.yaml" "${BACKUP_DIR}/config.yaml"
+        echo "已备份: config.yaml"
     fi
     
-    if [ -f "${TRIM_PKGVAR}/target/mihomo" ]; then
-        mkdir -p "${BACKUP_DIR}/data/target"
-        cp "${TRIM_PKGVAR}/target/mihomo" "${BACKUP_DIR}/data/target/mihomo"
-        echo "  ✅ 已备份 mihomo 二进制"
+    if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
+        cp -f "${TRIM_PKGETC}/settings.conf" "${BACKUP_DIR}/settings.conf"
+        echo "已备份: settings.conf"
     fi
     
-    # 备份订阅缓存
-    if [ -f "${TRIM_PKGVAR}/proxy_providers/subscription.yaml" ]; then
-        mkdir -p "${BACKUP_DIR}/data/proxy_providers"
-        cp "${TRIM_PKGVAR}/proxy_providers/subscription.yaml" "${BACKUP_DIR}/data/proxy_providers/subscription.yaml"
-        echo "  ✅ 已备份 subscription.yaml"
+    # 备份订阅数据
+    if [ -d "${TRIM_PKGVAR}/proxy_providers" ]; then
+        mkdir -p "${BACKUP_DIR}/proxy_providers"
+        cp -rf "${TRIM_PKGVAR}/proxy_providers/"* "${BACKUP_DIR}/proxy_providers/" 2>/dev/null
+        echo "已备份: proxy_providers/"
     fi
     
-    # 复制 UI 文件
+    # 备份 UI 数据
     if [ -d "${TRIM_PKGVAR}/ui" ]; then
-        cp -r "${TRIM_PKGVAR}/ui" "${BACKUP_DIR}/data/ui" 2>/dev/null
-        echo "  ✅ 已备份 UI 文件"
+        mkdir -p "${BACKUP_DIR}/ui"
+        cp -rf "${TRIM_PKGVAR}/ui/"* "${BACKUP_DIR}/ui/" 2>/dev/null
+        echo "已备份: ui/"
     fi
     
-    # 复制 GEO 数据
-    for f in geoip.dat geosite.dat Country.mmdb; do
-        if [ -f "${TRIM_PKGVAR}/${f}" ]; then
-            cp "${TRIM_PKGVAR}/${f}" "${BACKUP_DIR}/data/${f}"
-            echo "  ✅ 已备份 ${f}"
-        fi
-    done
+    # 创建保留标记
+    cat > "${BACKUP_DIR}/.preserved" << EOF
+MiProxy Data Preserved
+Time: $(date '+%Y-%m-%d %H:%M:%S')
+Action: keep
+EOF
     
-    echo "配置备份完成！重新安装时请选择\"快速安装\"模式。"
-    echo "备份位置: ${BACKUP_DIR}"
+    echo "数据备份完成"
 fi
 
 exit 0

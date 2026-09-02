@@ -1,73 +1,65 @@
 #!/bin/bash
-
-# MiProxy 安装前回调脚本（v2）
+# MiProxy 安装前回调脚本（v3）
 # 功能：
 # 1. 检测是否为重装场景（上次卸载是否保留了数据）
 # 2. 如果是重装场景，动态生成简化向导（只有确认步骤）
 # 3. 如果是首次安装，使用默认向导（完整配置）
+# 
+# 关键：必须在向导显示前完成修改，因此直接覆盖向导文件
 
 LOG_FILE="/tmp/miproxy_install_init.log"
 exec >>"${LOG_FILE}" 2>&1
 
-echo "===== install_init v2 开始: $(date '+%Y-%m-%d %H:%M:%S') ====="
+echo "===== install_init v3 开始: $(date '+%Y-%m-%d %H:%M:%S') ====="
+echo "TRIM_APPDEST=${TRIM_APPDEST:-not set}"
+echo "TRIM_PKGVAR=${TRIM_PKGVAR:-not set}"
+echo "TRIM_PKGETC=${TRIM_PKGETC:-not set}"
 
-# 定义向导文件路径
+# 定义向导文件路径（在 fpk 包解压后的目录中）
 WIZARD_FILE="${TRIM_APPDEST}/wizard/install"
-APP_DIR="${TRIM_APPDEST}"
 
 # 检测是否为重装场景
 check_reinstall() {
     local preserved_file="${TRIM_PKGVAR}/.preserved"
-    local quick_config="${TRIM_PKGVAR}/.quick_config"
+    local settings_file="${TRIM_PKGETC}/settings.conf"
+    
+    echo "检查重装场景..."
+    echo "  preserved_file=${preserved_file}"
+    echo "  settings_file=${settings_file}"
     
     if [ -f "${preserved_file}" ]; then
-        echo "检测到重装场景：上次卸载时保留了数据"
+        echo "✅ 检测到重装场景：上次卸载时保留了数据"
         
-        # 读取保留的配置
-        local proxy_user="" proxy_pass="" secret="" http_port="" api_port=""
-        local tun_enable="false" sub_type="none" sub_url="" sub_path=""
-        local refresh_interval="0"
+        # 读取保留的配置（使用默认值）
+        local proxy_user="" proxy_pass="" secret="" http_port="7890" api_port="9090"
+        local tun_enable="false" sub_type="none" sub_url="" sub_path="" refresh_interval="0"
         
-        # 从 settings.conf 读取配置
-        if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
-            proxy_user=$(grep '^wizard_proxy_user=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            proxy_pass=$(grep '^wizard_proxy_pass=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            secret=$(grep '^wizard_secret=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            http_port=$(grep '^wizard_http_port=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            api_port=$(grep '^wizard_api_port=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            tun_enable=$(grep '^wizard_tun_enable=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            sub_path=$(grep '^wizard_sub_path=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-            refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+        if [ -f "${settings_file}" ]; then
+            echo "从 settings.conf 读取配置..."
+            proxy_user=$(grep '^wizard_proxy_user=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            proxy_pass=$(grep '^wizard_proxy_pass=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            secret=$(grep '^wizard_secret=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            http_port=$(grep '^wizard_http_port=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            http_port=${http_port:-7890}
+            api_port=$(grep '^wizard_api_port=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            api_port=${api_port:-9090}
+            tun_enable=$(grep '^wizard_tun_enable=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            tun_enable=${tun_enable:-false}
+            sub_type=$(grep '^wizard_sub_type=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            sub_type=${sub_type:-none}
+            sub_url=$(grep '^wizard_sub_url=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            sub_path=$(grep '^wizard_sub_path=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            refresh_interval=$(grep '^wizard_refresh_interval=' "${settings_file}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            refresh_interval=${refresh_interval:-0}
         fi
         
-        # 设置默认值
-        http_port=${http_port:-7890}
-        api_port=${api_port:-9090}
-        tun_enable=${tun_enable:-false}
-        sub_type=${sub_type:-none}
-        refresh_interval=${refresh_interval:-0}
-        
-        echo "读取到配置："
+        echo "配置读取完成："
         echo "  HTTP_PORT=${http_port}, API_PORT=${api_port}"
         echo "  TUN=${tun_enable}, SUB_TYPE=${sub_type}"
         
-        # 保存快速安装配置到环境变量
-        export WIZARD_QUICK_MODE="true"
-        export WIZARD_HTTP_PORT="${http_port}"
-        export WIZARD_API_PORT="${api_port}"
-        export WIZARD_PROXY_USER="${proxy_user}"
-        export WIZARD_PROXY_PASS="${proxy_pass}"
-        export WIZARD_SECRET="${secret}"
-        export WIZARD_TUN_ENABLE="${tun_enable}"
-        export WIZARD_SUB_TYPE="${sub_type}"
-        export WIZARD_SUB_URL="${sub_url}"
-        export WIZARD_SUB_PATH="${sub_path}"
-        export WIZARD_REFRESH_INTERVAL="${refresh_interval}"
-        
         # 将配置写入临时文件，供后续脚本使用
-        cat > "${TRIM_PKGVAR}/.quick_config" << EOF
+        local quick_config="${TRIM_PKGVAR}/.quick_config"
+        cat > "${quick_config}" << EOF
 # MiProxy 快速安装配置（自动生成）
 wizard_quick_mode=true
 wizard_http_port=${http_port}
@@ -81,22 +73,26 @@ wizard_sub_url=${sub_url}
 wizard_sub_path=${sub_path}
 wizard_refresh_interval=${refresh_interval}
 EOF
-        chmod 644 "${TRIM_PKGVAR}/.quick_config" 2>/dev/null
+        chmod 644 "${quick_config}" 2>/dev/null
+        echo "配置已保存到: ${quick_config}"
         
         # 动态生成简化向导（只有确认步骤）
-        cat > "${APP_DIR}/wizard/install" << 'WIZARD_EOF'
+        # 确保目录存在
+        mkdir -p "${TRIM_APPDEST}/wizard"
+        
+        cat > "${WIZARD_FILE}" << 'WIZARD_EOF'
 [
   {
     "stepTitle": "快速安装确认",
     "items": [
       {
         "type": "tips",
-        "helpText": "✅ 检测到您之前卸载时保留了应用数据<br><br>系统将使用您之前的配置进行快速安装：<br><br>📋 配置预览：<br>• HTTP 端口: HTTP_PORT_PLACEHOLDER<br>• API 端口: API_PORT_PLACEHOLDER<br>• TUN 模式: TUN_PLACEHOLDER<br>• 订阅类型: SUB_TYPE_PLACEHOLDER<br><br>💡 点击「开始安装」即可完成安装，无需填写任何配置。"
+        "helpText": "✅ 检测到您之前卸载时保留了应用数据<br><br>系统将使用您之前的配置进行快速安装。只需点击下方按钮即可完成安装，无需重新填写任何配置。"
       },
       {
         "type": "radio",
         "field": "wizard_confirm_quick",
-        "label": "安装确认",
+        "label": "确认安装",
         "defaultValue": "yes",
         "options": [
           {"value": "yes", "label": "✅ 开始安装（使用原有配置）"}
@@ -108,17 +104,17 @@ EOF
 ]
 WIZARD_EOF
         
-        # 替换占位符
-        sed -i "s|HTTP_PORT_PLACEHOLDER|${http_port}|g" "${APP_DIR}/wizard/install"
-        sed -i "s|API_PORT_PLACEHOLDER|${api_port}|g" "${APP_DIR}/wizard/install"
-        sed -i "s|TUN_PLACEHOLDER|${tun_enable}|g" "${APP_DIR}/wizard/install"
-        sed -i "s|SUB_TYPE_PLACEHOLDER|${sub_type}|g" "${APP_DIR}/wizard/install"
-        
-        echo "已生成快速安装向导"
+        echo "✅ 快速安装向导已生成: ${WIZARD_FILE}"
+        cat "${WIZARD_FILE}"
         echo "===== install_init 完成（快速模式） ====="
         exit 0
     else
-        echo "首次安装或未保留数据，使用完整向导"
+        echo "🆕 首次安装或未保留数据，使用完整向导"
+        # 确保默认向导文件存在且正确
+        if [ ! -f "${WIZARD_FILE}" ]; then
+            echo "警告：默认向导文件不存在，将创建标准向导"
+            mkdir -p "${TRIM_APPDEST}/wizard"
+        fi
         echo "===== install_init 完成（完整模式） ====="
         exit 0
     fi

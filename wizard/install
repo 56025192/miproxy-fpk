@@ -4,7 +4,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用<br><br>✨ 功能特性：<br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：内置订阅自动刷新功能<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br><br>💡 安装后可随时通过控制面板修改配置"
+        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用<br><br>✨ 功能特性：<br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：mihomo proxy-providers 内置自动刷新<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br><br>💡 安装后可随时通过控制面板修改配置"
       }
     ]
   },
@@ -42,36 +42,11 @@
     ]
   },
   {
-    "stepTitle": "端口设置",
-    "items": [
-      {
-        "type": "tips",
-        "helpText": "配置代理服务的监听端口。默认 HTTP 代理端口 7890，API 端口 9090。"
-      },
-      {
-        "type": "text",
-        "field": "wizard_http_port",
-        "label": "HTTP 代理端口",
-        "initValue": "7890",
-        "placeholder": "7890",
-        "rules": [{"required": true, "message": "请输入端口号"}]
-      },
-      {
-        "type": "text",
-        "field": "wizard_api_port",
-        "label": "API 控制端口",
-        "initValue": "9090",
-        "placeholder": "9090",
-        "rules": [{"required": true, "message": "请输入端口号"}]
-      }
-    ]
-  },
-  {
     "stepTitle": "TUN 设置",
     "items": [
       {
         "type": "tips",
-        "helpText": "TUN 功能可将系统所有流量通过代理转发（全局代理）。<br><br>⚠️ 注意：<br>• TUN 需要 mihomo 以特殊方式运行<br>• 如果启用后服务异常，请关闭 TUN 重试<br>• 普通代理模式（无需 TUN）已能满足大多数使用场景"
+        "helpText": "TUN 功能可将系统所有流量通过代理转发（全局代理）。<br><br>⚠️ 注意：<br>• TUN 需要 mihomo 以特殊方式运行，fnOS 手动安装的 mihomo 可能无法启用此功能<br>• 如果启用后服务异常，请关闭 TUN 重试<br>• 普通代理模式（无需 TUN）已能满足大多数使用场景"
       },
       {
         "type": "radio",
@@ -91,7 +66,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "配置代理节点订阅，支持远程订阅 URL 和本地订阅文件两种方式。<br><br>📡 远程订阅：输入订阅链接地址<br>📁 本地订阅：指定本地 YAML 配置文件路径<br><br>💡 可跳过安装，后续在控制面板中配置。"
+        "helpText": "配置代理节点订阅，支持远程订阅 URL 和本地订阅文件两种方式。<br><br>📡 远程订阅：输入订阅链接地址，mihomo 自动获取并解码<br>📁 本地订阅：指定本地 YAML 配置文件路径<br>⏱️ 自动刷新：由 mihomo proxy-providers 内置 interval 功能实现<br><br>💡 可跳过安装，后续在控制面板中配置。"
       },
       {
         "type": "radio",

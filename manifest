@@ -1,8 +1,8 @@
 # MiProxy FPK Application Manifest
 appname               = miproxy
-version               = 2.7.1
+version               = 2.7.2
 display_name          = MiProxy
-desc                  = MiProxy v2.7.1 - 基于 mihomo 代理核心的飞牛 NAS 应用，安装流程已整合到 web UI 中，仅支持 Clash 格式订阅
+desc                  = MiProxy v2.7.2 - 基于 mihomo 代理核心的飞牛 NAS 应用，首次访问自动启动，仅支持 Clash 格式订阅
 platform              = all
 source                = thirdparty
 os_min_version        = 1.1.0
@@ -16,4 +16,4 @@ startup               = false
 service_port          = 9090
 desktop_uidir         = ui
 desktop_applaunchname = miproxy.dashboard
-changelog           = v2.7.1: 修复未配置时启动报错的 BUG | v2.7.0: 安装流程整合到 web UI | v2.6.20: 修复保留数据无法恢复
+changelog           = v2.7.2: 首次访问自动启动服务 | v2.7.1: 修复未配置时启动报错 | v2.7.0: 安装流程整合到 web UI

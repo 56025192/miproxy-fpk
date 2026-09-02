@@ -1,0 +1,106 @@
+#!/bin/bash
+# MiProxy 订阅刷新守护进程
+# 定时检查并刷新远程订阅，确保节点列表保持最新
+# 由 cmd/main 在启动时调用
+
+DEBUG_LOG="${TRIM_PKGVAR}/refresh_sub.log"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${DEBUG_LOG}"
+}
+
+# 检查是否需要运行
+check_should_run() {
+    # 读取配置
+    if [ ! -f "${TRIM_PKGETC}/settings.conf" ]; then
+        return 1
+    fi
+    
+    local sub_type sub_url refresh_interval
+    sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    
+    # 必须是非 none 的远程订阅且 interval > 0
+    [ "${sub_type}" = "remote" ] || return 1
+    [ -n "${sub_url}" ] || return 1
+    [ "${refresh_interval}" -gt 0 ] 2>/dev/null || return 1
+    
+    return 0
+}
+
+get_interval_seconds() {
+    local refresh_interval
+    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    echo $((refresh_interval * 3600))
+}
+
+# 下载订阅并触发配置更新
+do_refresh() {
+    local sub_url sub_cache_path
+    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    sub_cache_path="${TRIM_PKGVAR}/proxy_providers/subscription.yaml"
+    
+    if [ -z "${sub_url}" ]; then
+        log_msg "订阅 URL 为空，跳过刷新"
+        return 1
+    fi
+    
+    log_msg "开始刷新订阅: ${sub_url}"
+    
+    # 下载新订阅
+    if curl -fsSL --connect-timeout 15 --max-time 60 "${sub_url}" -o "${sub_cache_path}.tmp" 2>>"${DEBUG_LOG}"; then
+        if [ -s "${sub_cache_path}.tmp" ]; then
+            # 验证文件是有效的 YAML（检查是否包含 proxies 或 proxy-providers）
+            if grep -q "^proxies:\|^proxy-providers:" "${sub_cache_path}.tmp" 2>/dev/null; then
+                mv "${sub_cache_path}.tmp" "${sub_cache_path}"
+                local size
+                size=$(stat -c%s "${sub_cache_path}" 2>/dev/null || wc -c < "${sub_cache_path}")
+                log_msg "订阅下载成功: ${size} bytes"
+                
+                # 触发 mihomo 重启以应用新配置
+                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                bash "${SCRIPT_DIR}/main" restart >> "${DEBUG_LOG}" 2>&1
+                log_msg "mihomo 已重启以应用新订阅"
+                return 0
+            else
+                log_msg "订阅文件无效（不包含 proxies 或 proxy-providers）"
+                rm -f "${sub_cache_path}.tmp"
+                return 1
+            fi
+        else
+            log_msg "订阅文件为空"
+            rm -f "${sub_cache_path}.tmp"
+            return 1
+        fi
+    else
+        log_msg "订阅下载失败"
+        rm -f "${sub_cache_path}.tmp"
+        return 1
+    fi
+}
+
+# 主循环
+main_loop() {
+    log_msg "refresh_sub 守护进程启动"
+    
+    while true; do
+        if check_should_run; then
+            do_refresh
+        else
+            log_msg "配置检查：不满足运行条件（subscription_type != remote 或 interval <= 0）"
+        fi
+        
+        # 获取间隔并休眠
+        local interval_sec
+        interval_sec=$(get_interval_seconds)
+        log_msg "等待 ${interval_sec} 秒后再次检查..."
+        sleep "${interval_sec}"
+    done
+}
+
+# 信号处理
+trap 'log_msg "收到退出信号，守护进程即将退出"; exit 0' TERM INT
+
+# 启动主循环
+main_loop

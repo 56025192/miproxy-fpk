@@ -1,11 +1,11 @@
 #!/bin/bash
-# MiProxy 安装后回调脚本（v6 修复版）
-# 关键修复：extract_yaml_block 支持订阅源特殊格式（proxies: 块中列表项为顶格 -）
-# 完全同步订阅源的 proxies / proxy-groups / rules / dns / hosts 字段到 config.yaml
+# MiProxy 安装后回调脚本（v7 完整字段同步版）
+# 关键修复：完整同步订阅源的所有配置字段
+# 同步字段：proxies / proxy-groups / rules / dns / hosts / bypass / proxy-providers / rule-providers 等
 
 DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
 exec 2>>"${DEBUG_LOG}"
-echo "===== install_callback v6 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+echo "===== install_callback v7 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
@@ -25,13 +25,11 @@ SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
 TUN_ENABLE="${wizard_tun_enable:-false}"
 
-[ "${REFRESH_INTERVAL_HOURS}" = "0" ] && REFRESH_INTERVAL_SEC=0 || REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
-
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG_FILE}" >> "${DEBUG_LOG}"
 }
 
-log_msg "install_callback v6 启动"
+log_msg "install_callback v7 启动"
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
 log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
 
@@ -72,7 +70,7 @@ fi
 
 [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ] && cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
 
-# 修复版 yaml 块提取：支持订阅源特殊格式（proxies: 块中列表项为顶格 -）
+# 完整版 yaml 块提取：支持订阅源特殊格式（proxies: 块中列表项为顶格 -）
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import sys
@@ -106,21 +104,54 @@ sys.stdout.write(''.join(result))
 PYEOF
 }
 
+# ============ v7: 完整字段同步 ============
+# 同步所有来自订阅源的配置字段
 SUB_PROXIES=""; SUB_HOSTS=""; SUB_PG=""; SUB_RULES=""; SUB_DNS=""
+SUB_BYPASS=""; SUB_PROXY_PROVIDERS=""; SUB_RULE_PROVIDERS=""; SUB_SUB_RULE=""
+SUB_TUNNELS=""; SUB_LISTENERS=""; SUB_SNIFF=""; SUB_NTP=""; SUB_SCRIPT=""
+
 if [ -f "${SUB_CACHE_PATH}" ]; then
+    # 基础字段（原有）
     SUB_PROXIES=$(extract_yaml_block "proxies" "${SUB_CACHE_PATH}")
     SUB_HOSTS=$(extract_yaml_block "hosts" "${SUB_CACHE_PATH}")
     SUB_PG=$(extract_yaml_block "proxy-groups" "${SUB_CACHE_PATH}")
     SUB_RULES=$(extract_yaml_block "rules" "${SUB_CACHE_PATH}")
     SUB_DNS=$(extract_yaml_block "dns" "${SUB_CACHE_PATH}")
-    log_msg "  📦 proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行 hosts:$(printf '%s' "${SUB_HOSTS}" | wc -l)行 pg:$(printf '%s' "${SUB_PG}" | wc -l)行 rules:$(printf '%s' "${SUB_RULES}" | wc -l)行 dns:$(printf '%s' "${SUB_DNS}" | wc -l)行"
+    
+    # 扩展字段（v7 新增）
+    SUB_BYPASS=$(extract_yaml_block "bypass" "${SUB_CACHE_PATH}")
+    SUB_PROXY_PROVIDERS=$(extract_yaml_block "proxy-providers" "${SUB_CACHE_PATH}")
+    SUB_RULE_PROVIDERS=$(extract_yaml_block "rule-providers" "${SUB_CACHE_PATH}")
+    SUB_SUB_RULE=$(extract_yaml_block "sub-rule" "${SUB_CACHE_PATH}")
+    SUB_TUNNELS=$(extract_yaml_block "tunnels" "${SUB_CACHE_PATH}")
+    SUB_LISTENERS=$(extract_yaml_block "listeners" "${SUB_CACHE_PATH}")
+    SUB_SNIFF=$(extract_yaml_block "sniff" "${SUB_CACHE_PATH}")
+    SUB_NTP=$(extract_yaml_block "ntp" "${SUB_CACHE_PATH}")
+    SUB_SCRIPT=$(extract_yaml_block "script" "${SUB_CACHE_PATH}")
+    
+    log_msg "  📦 字段同步统计:"
+    log_msg "      proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行"
+    log_msg "      hosts:$(printf '%s' "${SUB_HOSTS}" | wc -l)行"
+    log_msg "      proxy-groups:$(printf '%s' "${SUB_PG}" | wc -l)行"
+    log_msg "      rules:$(printf '%s' "${SUB_RULES}" | wc -l)行"
+    log_msg "      dns:$(printf '%s' "${SUB_DNS}" | wc -l)行"
+    log_msg "      bypass:$(printf '%s' "${SUB_BYPASS}" | wc -l)行"
+    log_msg "      proxy-providers:$(printf '%s' "${SUB_PROXY_PROVIDERS}" | wc -l)行"
+    log_msg "      rule-providers:$(printf '%s' "${SUB_RULE_PROVIDERS}" | wc -l)行"
+    log_msg "      sub-rule:$(printf '%s' "${SUB_SUB_RULE}" | wc -l)行"
+    log_msg "      tunnels:$(printf '%s' "${SUB_TUNNELS}" | wc -l)行"
+    log_msg "      listeners:$(printf '%s' "${SUB_LISTENERS}" | wc -l)行"
+    log_msg "      sniff:$(printf '%s' "${SUB_SNIFF}" | wc -l)行"
+    log_msg "      ntp:$(printf '%s' "${SUB_NTP}" | wc -l)行"
+    log_msg "      script:$(printf '%s' "${SUB_SCRIPT}" | wc -l)行"
+    
     [ -n "${SUB_DNS}" ] && ! printf '%s' "${SUB_DNS}" | grep -q "nameserver" && SUB_DNS="" && log_msg "  ⚠️ dns 缺 nameserver，回退本地默认"
 fi
 
 log_msg "生成 config.yaml..."
 
 {
-    echo "# MiProxy 主配置（v6：完整同步订阅源所有字段）"
+    echo "# MiProxy 主配置（v7：完整同步订阅源所有字段）"
     echo ""
     echo "mixed-port: ${HTTP_PORT}"
     echo "allow-lan: true"
@@ -145,9 +176,9 @@ log_msg "生成 config.yaml..."
     echo "  auto-detect-interface: true"
     echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
 
-    # proxies（v6 修复：支持顶格列表项）
+    # ============ 来自订阅源的字段 ============
     [ -n "${SUB_PROXIES}" ] && echo "# 节点列表（来自订阅源）" && echo "${SUB_PROXIES}"
-    [ -n "${SUB_HOSTS}" ] && echo "# hosts" && echo "${SUB_HOSTS}"
+    [ -n "${SUB_HOSTS}" ] && echo "# hosts（来自订阅源）" && echo "${SUB_HOSTS}"
 
     if [ -n "${SUB_PG}" ]; then
         echo "# 代理组（来自订阅源）"
@@ -174,6 +205,17 @@ log_msg "生成 config.yaml..."
         echo "  fake-ip-filter: [\"+.lan\", \"+.local\"${SUB_DOMAIN_FILTER:+, \"${domain}\", \"*.${domain}\"}]"
         echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
     fi
+
+    # v7 新增字段
+    [ -n "${SUB_BYPASS}" ] && echo "# bypass 私有绕过列表（来自订阅源）" && echo "${SUB_BYPASS}"
+    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers 代理集合（来自订阅源）" && echo "${SUB_PROXY_PROVIDERS}"
+    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers 规则集合（来自订阅源）" && echo "${SUB_RULE_PROVIDERS}"
+    [ -n "${SUB_SUB_RULE}" ] && echo "# sub-rule 子规则（来自订阅源）" && echo "${SUB_SUB_RULE}"
+    [ -n "${SUB_TUNNELS}" ] && echo "# tunnels 流量隧道（来自订阅源）" && echo "${SUB_TUNNELS}"
+    [ -n "${SUB_LISTENERS}" ] && echo "# listeners 监听器（来自订阅源）" && echo "${SUB_LISTENERS}"
+    [ -n "${SUB_SNIFF}" ] && echo "# sniff 嗅探（来自订阅源）" && echo "${SUB_SNIFF}"
+    [ -n "${SUB_NTP}" ] && echo "# ntp 时间同步（来自订阅源）" && echo "${SUB_NTP}"
+    [ -n "${SUB_SCRIPT}" ] && echo "# script 脚本（来自订阅源）" && echo "${SUB_SCRIPT}"
 } > "${CONFIG_FILE}"
 
 chmod 666 "${CONFIG_FILE}"
@@ -194,5 +236,5 @@ chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bash "${SCRIPT_DIR}/main" start 2>>"${DEBUG_LOG}" && log_msg "✅ miproxy 启动成功" || log_msg "⚠️  miproxy 启动失败"
-log_msg "===== install_callback v6 完成 ====="
+log_msg "===== install_callback v7 完成 ====="
 exit 0

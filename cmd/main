@@ -1,250 +1,240 @@
 #!/bin/bash
 
-# MiProxy 主进程管理脚本
-# 启动时自动调用 refresh_sub 守护进程实现定时订阅刷新
+# MiProxy 服务管理脚本
+# 支持：start, stop, restart, status
+# 特性：
+# - 无配置文件时使用默认配置启动
+# - 配置文件变更后自动重启
+# - 进程守护（可选）
 
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
-REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_sub.pid"
-
-# MiProxy 核心路径
+CONFIG_FILE="${TRIM_PKGVAR}/config.yaml"
+SETTINGS_FILE="${TRIM_PKGETC}/settings.conf"
 MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
 MIHOMO_DIR="${TRIM_PKGVAR}"
-MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 
-CMD="${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}"
+mkdir -p "${TRIM_PKGVAR}" "${TRIM_PKGETC}" 2>/dev/null
 
 log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
-# ============ 辅助函数 ============
+# ========== 辅助函数 ==========
 
 check_process() {
     local pid=$1
-    if [ -z "${pid}" ]; then
-        return 1
-    fi
-    if kill -0 "${pid}" 2>/dev/null; then
-        return 0
-    else
-        return 1
-    fi
+    [ -z "${pid}" ] && return 1
+    kill -0 "${pid}" 2>/dev/null
 }
 
 is_running() {
-    # 检查 PID 文件中的进程是否仍在运行
     if [ -f "${PID_FILE}" ]; then
-        local pid
-        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        local pid=$(head -n 1 "${PID_FILE}" | tr -d ' \n\r')
         if check_process "${pid}"; then
             return 0
         else
-            # 清理过期的 PID 文件
             rm -f "${PID_FILE}"
         fi
     fi
     return 1
 }
 
-# ============ 配置文件检测 ============
-
-check_config_exists() {
-    # 检查配置文件是否存在
-    if [ ! -f "${MIHOMO_CONFIG}" ]; then
-        log_msg "配置文件不存在: ${MIHOMO_CONFIG}"
-        log_msg "请先在 Web UI 中完成首次配置"
-        return 1
-    fi
-    return 0
-}
-
-# ============ 订阅刷新守护进程管理 ============
-
-start_refresh_daemon() {
-    # 检查是否需要启动守护进程
-    if [ ! -f "${TRIM_PKGETC}/settings.conf" ]; then
-        log_msg "配置文件不存在，跳过订阅刷新守护进程"
-        return 0
-    fi
+# ========== 启动服务 ==========
+do_start() {
+    log_msg "尝试启动 miproxy..."
     
-    local sub_type sub_url refresh_interval
-    sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
-    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
-    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
-    
-    # 检查是否满足运行条件
-    if [ "${sub_type}" != "remote" ]; then
-        log_msg "订阅类型为 ${sub_type}，不启动刷新守护进程"
-        return 0
-    fi
-    
-    if [ -z "${sub_url}" ]; then
-        log_msg "订阅 URL 为空，不启动刷新守护进程"
-        return 0
-    fi
-    
-    if [ -z "${refresh_interval}" ] || [ "${refresh_interval}" -le 0 ] 2>/dev/null; then
-        log_msg "刷新间隔为 ${refresh_interval} 小时，不启动刷新守护进程"
-        return 0
-    fi
-    
-    # 检查守护进程是否已经在运行
-    if [ -f "${REFRESH_PID_FILE}" ]; then
-        local existing_pid
-        existing_pid=$(head -n 1 "${REFRESH_PID_FILE}" | tr -d '[:space:]')
-        if check_process "${existing_pid}"; then
-            log_msg "订阅刷新守护进程已在运行 (PID: ${existing_pid})"
-            return 0
-        else
-            rm -f "${REFRESH_PID_FILE}"
-        fi
-    fi
-    
-    # 启动守护进程
-    log_msg "启动订阅刷新守护进程 (间隔: ${refresh_interval} 小时)..."
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    
-    # 后台运行守护进程
-    nohup bash "${script_dir}/refresh_sub" >> "${LOG_FILE}" 2>&1 &
-    local new_pid=$!
-    echo "${new_pid}" > "${REFRESH_PID_FILE}"
-    
-    sleep 1
-    if check_process "${new_pid}"; then
-        log_msg "订阅刷新守护进程已启动 (PID: ${new_pid})"
-    else
-        log_msg "警告：订阅刷新守护进程启动失败"
-        rm -f "${REFRESH_PID_FILE}"
-    fi
-}
-
-stop_refresh_daemon() {
-    if [ -f "${REFRESH_PID_FILE}" ]; then
-        local pid
-        pid=$(head -n 1 "${REFRESH_PID_FILE}" | tr -d '[:space:]')
-        if [ -n "${pid}" ] && check_process "${pid}"; then
-            log_msg "停止订阅刷新守护进程 (PID: ${pid})..."
-            kill -TERM "${pid}" >> ${LOG_FILE} 2>&1 || true
-            sleep 1
-            if check_process "${pid}"; then
-                kill -KILL "${pid}" >> ${LOG_FILE} 2>&1 || true
-            fi
-        fi
-        rm -f "${REFRESH_PID_FILE}"
-    fi
-}
-
-# ============ miproxy 主进程管理 ============
-
-start_process() {
-    if is_running; then
-        log_msg "miproxy 已在运行"
-        return 0
-    fi
-
-    # ============ 关键修复：启动前检查配置文件 ============
-    if ! check_config_exists; then
-        log_msg "错误: 配置文件不存在，无法启动 miproxy"
-        log_msg "请先在 Web UI 中完成首次配置"
-        echo "miproxy 配置文件不存在，请先在 Web UI 中完成首次配置" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
-        return 1
-    fi
-
-    # 启动前校验二进制文件
+    # 检查二进制文件
     if [ ! -x "${MIHOMO_BIN}" ]; then
         log_msg "错误: mihomo 二进制不存在或不可执行: ${MIHOMO_BIN}"
+        # 尝试从 APP_DEST 复制
+        if [ -f "${TRIM_APPDEST}/server/mihomo" ]; then
+            mkdir -p "${TRIM_PKGVAR}/target"
+            cp -f "${TRIM_APPDEST}/server/mihomo" "${MIHOMO_BIN}"
+            chmod +x "${MIHOMO_BIN}"
+            log_msg "已从 APP_DEST 复制 mihomo"
+        else
+            echo "错误: mihomo 二进制不存在" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+            return 1
+        fi
+    fi
+    
+    # 检查配置文件 - 如果不存在则生成默认配置
+    if [ ! -f "${CONFIG_FILE}" ] || [ ! -s "${CONFIG_FILE}" ]; then
+        log_msg "配置文件不存在，生成默认配置..."
+        generate_default_config
+    fi
+    
+    if [ ! -f "${CONFIG_FILE}" ]; then
+        log_msg "错误: 无法生成配置文件"
+        echo "错误: 无法生成配置文件" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
         return 1
     fi
-
-    log_msg "启动 miproxy (cmd: ${CMD})..."
-    # 启动 mihomo 到后台，日志写入 LOG_FILE
-    bash -c "${CMD}" >> ${LOG_FILE} 2>&1 &
+    
+    # 停止现有进程（如果有）
+    if is_running; then
+        log_msg "服务已在运行"
+        return 0
+    fi
+    
+    # 启动 mihomo
+    log_msg "启动 mihomo..."
+    local cmd="${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${CONFIG_FILE}"
+    
+    # 后台运行
+    bash -c "${cmd}" >> "${LOG_FILE}" 2>&1 &
     local pid=$!
-    printf "%s" "${pid}" > ${PID_FILE}
-
-    # 等待并验证 mihomo 是否真的启动成功
+    
+    # 等待验证
     sleep 2
+    
     if check_process "${pid}"; then
-        log_msg "miproxy 启动完成 (PID: ${pid})"
-        
-        # 启动订阅刷新守护进程
-        start_refresh_daemon
+        echo "${pid}" > "${PID_FILE}"
+        log_msg "miproxy 启动成功 (PID: ${pid})"
         return 0
     else
-        log_msg "错误: miproxy 启动后立即退出，请检查 ${LOG_FILE}"
-        rm -f "${PID_FILE}"
+        log_msg "错误: miproxy 启动失败，请检查 ${LOG_FILE}"
+        echo "miproxy 启动失败，请查看 ${LOG_FILE}" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
         return 1
     fi
 }
 
-stop_process() {
+# ========== 停止服务 ==========
+do_stop() {
     log_msg "停止 miproxy..."
-
-    # 先停止订阅刷新守护进程
-    stop_refresh_daemon
-
+    
     local pid=""
-    if [ -r "${PID_FILE}" ]; then
-        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+    if [ -f "${PID_FILE}" ]; then
+        pid=$(head -n 1 "${PID_FILE}" | tr -d ' \n\r')
     fi
-
+    
     if [ -z "${pid}" ] || ! check_process "${pid}"; then
-        log_msg "进程未运行"
+        log_msg "服务未运行"
         rm -f "${PID_FILE}"
         return 0
     fi
-
-    log_msg "发送 TERM 信号到 PID:${pid}..."
-    kill -TERM ${pid} >> ${LOG_FILE} 2>&1 || true
-
+    
+    # 优雅停止
+    kill -TERM "${pid}" >> "${LOG_FILE}" 2>&1 || true
+    
     local count=0
     while check_process "${pid}" && [ $count -lt 10 ]; do
         sleep 1
         count=$((count + 1))
-        log_msg "等待进程退出... (${count}s/10s)"
+        log_msg "等待进程退出... (${count}s)"
     done
-
+    
+    # 强制停止
     if check_process "${pid}"; then
-        log_msg "TERM 信号未生效，发送 KILL 信号到 PID:${pid}..."
         kill -KILL "${pid}" 2>/dev/null || true
         sleep 1
     fi
+    
     rm -f "${PID_FILE}"
-    log_msg "进程已停止"
+    log_msg "服务已停止"
     return 0
 }
 
-case "$1" in
-start)
-    if start_process; then
+# ========== 重启服务 ==========
+do_restart() {
+    log_msg "重启 miproxy..."
+    do_stop
+    sleep 1
+    do_start
+}
+
+# ========== 状态检查 ==========
+do_status() {
+    if is_running; then
+        local pid=$(head -n 1 "${PID_FILE}" | tr -d ' \n\r')
+        log_msg "服务运行中 (PID: ${pid})"
         exit 0
     else
-        # 把错误写到 fnOS 能识别的地方
-        echo "miproxy 启动失败，请先在 Web UI 中完成首次配置" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
+        log_msg "服务未运行"
+        exit 3
+    fi
+}
+
+# ========== 生成默认配置 ==========
+generate_default_config() {
+    local UI_TARGET="${TRIM_PKGVAR}/ui"
+    
+    # 读取设置（如果有）
+    local http_port="7890"
+    local api_port="9090"
+    local secret=""
+    
+    if [ -f "${SETTINGS_FILE}" ]; then
+        http_port=$(grep '^wizard_http_port=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2- | tr -d ' \n\r')
+        http_port=${http_port:-7890}
+        api_port=$(grep '^wizard_api_port=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2- | tr -d ' \n\r')
+        api_port=${api_port:-9090}
+        secret=$(grep '^wizard_secret=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2- | tr -d ' \n\r')
+    fi
+    
+    # 生成默认配置
+    {
+        echo "# MiProxy 默认配置文件"
+        echo "# 生成时间: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "# 提示: 请在 Web UI 中完成订阅配置"
+        echo ""
+        echo "mixed-port: ${http_port}"
+        echo "allow-lan: true"
+        echo "mode: rule"
+        echo "log-level: info"
+        echo "ipv6: false"
+        echo "external-controller: 0.0.0.0:${api_port}"
+        echo "external-ui: ${UI_TARGET}"
+        echo "external-ui-name: zashboard"
+        [ -n "$secret" ] && echo "secret: \"${secret}\""
+        echo "external-controller-cors:"
+        echo "  allow-private-network: true"
+        echo "  allow-origins: [\"*\"]"
+        echo "geodata-mode: true"
+        echo "geodata-loader: memconservative"
+        echo "tun:"
+        echo "  enable: false"
+        echo "  stack: system"
+        echo "  auto-route: true"
+        echo "  auto-detect-interface: true"
+        echo "dns:"
+        echo "  enable: true; listen: 0.0.0.0:53"
+        echo "  enhanced-mode: fake-ip; fake-ip-range: 198.18.0.1/16"
+        echo "  fake-ip-filter: [\"+.lan\", \"+.local\"]"
+        echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
+        echo "proxy-groups:"
+        echo "  - name: PROXY; type: select; proxies: [DIRECT]"
+        echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
+    } > "${CONFIG_FILE}"
+    
+    chmod 644 "${CONFIG_FILE}" 2>/dev/null
+    log_msg "默认配置已生成: ${CONFIG_FILE}"
+}
+
+# ========== 主入口 ==========
+case "$1" in
+start)
+    if do_start; then
+        exit 0
+    else
         exit 1
     fi
     ;;
 stop)
-    stop_process
+    do_stop
     exit $?
     ;;
 restart)
-    stop_process
-    sleep 2
-    if start_process; then
+    do_stop
+    sleep 1
+    if do_start; then
         exit 0
     else
         exit 1
     fi
     ;;
 status)
-    if is_running; then
-        exit 0
-    else
-        exit 3
-    fi
+    do_status
     ;;
 *)
     echo "Usage: $0 {start|stop|restart|status}"

@@ -1,21 +1,14 @@
 #!/bin/bash
 
-# MiProxy 卸载后回调脚本（简化版 v4）
-# 职责：
-# 1. 保留数据：将配置备份到持久化位置
-# 2. 删除数据：清理所有文件
+# MiProxy 卸载后回调脚本
+# 职责：清理残留文件（默认不保留数据）
 
-DATA_ACTION="${wizard_data_action:-keep}"
+DATA_ACTION="${wizard_data_action:-delete}"
 LOG_FILE="/tmp/miproxy_uninstall.log"
-
 exec >>"${LOG_FILE}" 2>&1
 
 echo ""
-echo "=========================================="
 echo "$(date '+%Y-%m-%d %H:%M:%S') uninstall_callback: 用户选择=${DATA_ACTION}"
-echo "=========================================="
-
-BACKUP_DIR="/tmp/miproxy_backup"
 
 # 收集需要清理的路径
 CLEAN_PATHS=(
@@ -23,80 +16,17 @@ CLEAN_PATHS=(
     "${TRIM_PKGETC}"
 )
 
-# 添加数据共享目录
-if [ -n "${TRIM_DATA_SHARE_PATHS}" ]; then
-    IFS=':' read -ra SHARES <<< "${TRIM_DATA_SHARE_PATHS}"
-    for share in "${SHARES[@]}"; do
-        CLEAN_PATHS+=("${share}")
-    done
-fi
-
 if [ "${DATA_ACTION}" = "delete" ]; then
-    # ========== 删除数据模式 ==========
-    echo "完整删除模式：清理所有 miproxy 残留..."
-    
+    echo "删除模式：清理所有数据..."
     for path in "${CLEAN_PATHS[@]}"; do
-        if [ -e "${path}" ]; then
-            if rm -rf "${path}" 2>/dev/null; then
-                echo "已删除: ${path}"
-            else
-                echo "删除失败: ${path}"
-            fi
-        fi
+        [ -e "${path}" ] && rm -rf "${path}" 2>/dev/null && echo "已删除: ${path}"
     done
-    
-    # 清理备份目录
-    if [ -d "${BACKUP_DIR}" ]; then
-        rm -rf "${BACKUP_DIR}"
-        echo "已清理备份目录: ${BACKUP_DIR}"
-    fi
     
     # 清理进程
     pkill -KILL -x mihomo 2>/dev/null || true
-    echo "进程已清理"
-    
-    echo "完整删除完成"
-    
+    echo "删除完成"
 else
-    # ========== 保留数据模式 ==========
-    echo "保留数据模式：备份配置到 ${BACKUP_DIR}..."
-    
-    # 确保备份目录存在
-    mkdir -p "${BACKUP_DIR}"
-    
-    # 备份配置文件
-    if [ -f "${TRIM_PKGVAR}/config.yaml" ]; then
-        cp -f "${TRIM_PKGVAR}/config.yaml" "${BACKUP_DIR}/config.yaml"
-        echo "已备份: config.yaml"
-    fi
-    
-    if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
-        cp -f "${TRIM_PKGETC}/settings.conf" "${BACKUP_DIR}/settings.conf"
-        echo "已备份: settings.conf"
-    fi
-    
-    # 备份订阅数据
-    if [ -d "${TRIM_PKGVAR}/proxy_providers" ]; then
-        mkdir -p "${BACKUP_DIR}/proxy_providers"
-        cp -rf "${TRIM_PKGVAR}/proxy_providers/"* "${BACKUP_DIR}/proxy_providers/" 2>/dev/null
-        echo "已备份: proxy_providers/"
-    fi
-    
-    # 备份 UI 数据
-    if [ -d "${TRIM_PKGVAR}/ui" ]; then
-        mkdir -p "${BACKUP_DIR}/ui"
-        cp -rf "${TRIM_PKGVAR}/ui/"* "${BACKUP_DIR}/ui/" 2>/dev/null
-        echo "已备份: ui/"
-    fi
-    
-    # 创建保留标记
-    cat > "${BACKUP_DIR}/.preserved" << EOF
-MiProxy Data Preserved
-Time: $(date '+%Y-%m-%d %H:%M:%S')
-Action: keep
-EOF
-    
-    echo "数据备份完成"
+    echo "保留模式：不清理数据"
 fi
 
 exit 0

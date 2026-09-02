@@ -3,398 +3,679 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MiProxy</title>
+    <title>MiProxy - mihomo 管理面板</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            color: #fff;
         }
-        .container {
+        .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+        .card {
             background: white;
-            border-radius: 20px;
+            border-radius: 16px;
             padding: 40px;
-            max-width: 600px;
-            width: 100%;
-            text-align: center;
+            color: #333;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        h1 { color: #1a1a2e; margin-bottom: 8px; font-size: 28px; }
+        h1 { color: #1a1a2e; margin-bottom: 10px; font-size: 28px; }
+        h2 { color: #1a1a2e; margin-bottom: 20px; font-size: 22px; }
         .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
         
-        /* 加载状态 */
-        .loading-box {
-            background: #f0f9ff;
-            border: 1px solid #0ea5e9;
-            border-radius: 12px;
-            padding: 30px;
-            margin-bottom: 20px;
+        /* 步骤指示器 */
+        .steps { display: flex; justify-content: space-between; margin-bottom: 40px; position: relative; }
+        .steps::before {
+            content: ''; position: absolute; top: 20px; left: 0; right: 0; height: 4px;
+            background: #e0e0e0; z-index: 0;
         }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #e0f2fe;
-            border-top-color: #0ea5e9;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+        .step {
+            position: relative; z-index: 1; text-align: center; flex: 1;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .loading-text { color: #0369a1; font-size: 14px; }
+        .step-circle {
+            width: 40px; height: 40px; border-radius: 50%; background: #e0e0e0;
+            color: #999; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 10px; font-weight: bold; transition: all 0.3s;
+        }
+        .step.active .step-circle { background: #10b981; color: white; }
+        .step.completed .step-circle { background: #10b981; color: white; }
+        .step-label { font-size: 12px; color: #999; }
+        .step.active .step-label { color: #10b981; font-weight: bold; }
         
-        /* 成功状态 */
-        .success-box {
-            background: #f0fdf4;
-            border: 1px solid #10b981;
-            border-radius: 12px;
-            padding: 30px;
-            margin-bottom: 20px;
-            animation: fadeIn 0.3s ease;
+        /* 表单样式 */
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block; margin-bottom: 8px; font-weight: 500; color: #333;
         }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } }
-        .success-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-        .success-text { color: #047857; font-size: 16px; font-weight: 500; }
-        
-        /* 面板选择 */
-        .panels { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
-        .panel-card {
-            flex: 1; min-width: 220px; padding: 30px;
-            border: 3px solid #ddd; border-radius: 15px;
-            cursor: pointer; transition: all 0.3s; text-decoration: none; color: #333;
-        }
-        .panel-card:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(0,0,0,0.2); }
-        .zashboard { border-color: #10b981; background: #f0fdf4; }
-        .zashboard:hover { border-color: #059669; background: #dcfce7; }
-        .metacubexd { border-color: #f59e0b; background: #fffbeb; }
-        .metacubexd:hover { border-color: #d97706; background: #fef3c7; }
-        .panel-card h2 { margin-bottom: 10px; font-size: 20px; }
-        .panel-card p { color: #666; font-size: 13px; line-height: 1.5; }
-        .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; margin-top: 12px; font-weight: 500; }
-        .badge-recommend { background: #10b981; color: white; }
-        .badge-lightweight { background: #f59e0b; color: white; }
-        
-        /* 配置表单 */
-        .config-box {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 20px;
-            text-align: left;
-        }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; color: #475569; font-size: 13px; margin-bottom: 5px; font-weight: 500; }
         .form-group input, .form-group select {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #cbd5e1;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.2s;
+            width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0;
+            border-radius: 8px; font-size: 14px; transition: border-color 0.3s;
         }
         .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: #0ea5e9;
-            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+            outline: none; border-color: #10b981;
         }
-        .form-group .tips { color: #64748b; font-size: 12px; margin-top: 4px; }
+        .form-group input[type="checkbox"] { width: auto; margin-right: 8px; }
+        .checkbox-group { display: flex; align-items: center; }
+        .tips {
+            background: #f0f9f4; border-left: 4px solid #10b981; padding: 15px;
+            border-radius: 0 8px 8px 0; margin-bottom: 20px; font-size: 13px; color: #333;
+        }
+        .tips.warning { background: #fffbeb; border-color: #f59e0b; }
         
         /* 按钮 */
         .btn {
-            display: inline-block;
-            padding: 12px 30px;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 500;
-            cursor: pointer;
-            border: none;
-            transition: all 0.2s;
+            padding: 12px 24px; border: none; border-radius: 8px; font-size: 14px;
+            font-weight: 500; cursor: pointer; transition: all 0.3s; margin-right: 10px;
         }
-        .btn-primary {
-            background: #0ea5e9;
-            color: white;
-        }
-        .btn-primary:hover { background: #0284c7; transform: translateY(-1px); }
-        .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; transform: none; }
-        .btn-secondary {
-            background: #e2e8f0;
-            color: #475569;
-            margin-left: 10px;
-        }
-        .btn-secondary:hover { background: #cbd5e1; }
+        .btn-primary { background: #10b981; color: white; }
+        .btn-primary:hover { background: #059669; }
+        .btn-secondary { background: #e0e0e0; color: #333; }
+        .btn-secondary:hover { background: #d0d0d0; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-group { display: flex; justify-content: space-between; margin-top: 30px; }
         
-        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #999; font-size: 12px; }
+        /* 页面切换 */
+        .page { display: none; }
+        .page.active { display: block; }
         
-        .hidden { display: none !important; }
-        
-        /* 错误提示 */
-        .error-box {
-            background: #fef2f2;
-            border: 1px solid #ef4444;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            color: #dc2626;
+        /* 首页 */
+        .panels { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .panel-card {
+            flex: 1; min-width: 200px; padding: 30px; border: 3px solid #ddd;
+            border-radius: 15px; cursor: pointer; transition: all 0.3s; text-align: center;
+            background: #f9f9f9;
         }
+        .panel-card:hover {
+            transform: translateY(-5px); box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+        }
+        .panel-card h3 { margin-bottom: 10px; font-size: 18px; }
+        .panel-card p { color: #666; font-size: 13px; }
+        .zashboard { border-color: #10b981; }
+        .zashboard:hover { background: #f0fdf4; }
+        .metacubexd { border-color: #f59e0b; }
+        .metacubexd:hover { background: #fffbeb; }
+        .admin { border-color: #6366f1; }
+        .admin:hover { background: #eef2ff; }
+        
+        /* 管理面板 */
+        .config-section {
+            border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; margin-bottom: 20px;
+        }
+        .config-section h3 {
+            color: #1a1a2e; margin-bottom: 15px; padding-bottom: 10px;
+            border-bottom: 2px solid #10b981;
+        }
+        
+        /* 登录框 */
+        .login-box {
+            max-width: 400px; margin: 100px auto; text-align: center;
+        }
+        .login-box h2 { margin-bottom: 30px; }
+        .login-error {
+            background: #fee2e2; color: #dc2626; padding: 12px; border-radius: 8px;
+            margin-bottom: 20px; font-size: 14px;
+        }
+        
+        /* 加载状态 */
+        .loading {
+            text-align: center; padding: 60px; color: #666;
+        }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #e0e0e0;
+            border-top-color: #10b981; border-radius: 50%;
+            animation: spin 1s linear infinite; margin: 0 auto 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* 页脚 */
+        .footer {
+            text-align: center; margin-top: 30px; padding-top: 20px;
+            border-top: 1px solid #eee; color: #999; font-size: 12px;
+        }
+        
+        /* 服务状态 */
+        .status-badge {
+            display: inline-block; padding: 6px 16px; border-radius: 20px;
+            font-size: 12px; font-weight: 500; margin-left: 10px;
+        }
+        .status-running { background: #dcfce7; color: #16a34a; }
+        .status-stopped { background: #fee2e2; color: #dc2626; }
+        
+        /* 成功消息 */
+        .success-message {
+            background: #dcfce7; color: #16a34a; padding: 20px; border-radius: 12px;
+            text-align: center; margin: 20px 0;
+        }
+        .success-message h3 { margin-bottom: 10px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>MiProxy</h1>
-        <p class="subtitle" id="pageSubtitle">正在检测配置状态...</p>
-        
-        <!-- 加载中 -->
-        <div id="loadingView" class="loading-box">
-            <div class="spinner"></div>
-            <p class="loading-text" id="loadingText">正在连接服务器...</p>
+        <!-- 加载状态 -->
+        <div id="loading" class="card">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>正在加载...</p>
+            </div>
         </div>
         
-        <!-- 错误 -->
-        <div id="errorView" class="error-box hidden">
-            <p id="errorText">发生错误</p>
+        <!-- 登录页面 -->
+        <div id="login-page" class="card login-box" style="display:none;">
+            <h2>🔐 MiProxy 管理认证</h2>
+            <p class="subtitle">请输入管理密钥登录后台</p>
+            <div id="login-error" class="login-error" style="display:none;"></div>
+            <div class="form-group">
+                <input type="password" id="login-password" placeholder="请输入管理密钥" />
+            </div>
+            <button class="btn btn-primary" style="width:100%;" onclick="doLogin()">登 录</button>
         </div>
         
-        <!-- 服务启动中 -->
-        <div id="startingView" class="loading-box hidden">
-            <div class="spinner"></div>
-            <p class="loading-text">正在启动服务，请稍候...</p>
-        </div>
-        
-        <!-- 配置向导 -->
-        <div id="configView" class="hidden">
-            <div class="config-box">
+        <!-- 安装向导 -->
+        <div id="install-page" class="card" style="display:none;">
+            <div class="tips">
+                <strong>📦 欢迎使用 MiProxy</strong><br>
+                首次使用需要完成基础配置。配置信息将保存到 config.yaml 文件中。
+            </div>
+            
+            <h2>快速配置</h2>
+            
+            <div class="steps">
+                <div class="step active" data-step="1">
+                    <div class="step-circle">1</div>
+                    <div class="step-label">基础设置</div>
+                </div>
+                <div class="step" data-step="2">
+                    <div class="step-circle">2</div>
+                    <div class="step-label">订阅配置</div>
+                </div>
+                <div class="step" data-step="3">
+                    <div class="step-circle">3</div>
+                    <div class="step-label">完成</div>
+                </div>
+            </div>
+            
+            <!-- 步骤1: 基础设置 -->
+            <div id="step-1" class="step-content">
+                <div class="form-group">
+                    <label>HTTP 代理端口</label>
+                    <input type="number" id="http-port" value="7890" min="1" max="65535" />
+                </div>
+                <div class="form-group">
+                    <label>API 控制端口</label>
+                    <input type="number" id="api-port" value="9090" min="1" max="65535" />
+                </div>
+                <div class="form-group">
+                    <label>管理密钥 <span style="color:#dc2626;">*</span></label>
+                    <input type="password" id="secret" placeholder="设置面板管理密钥" />
+                    <small style="color:#666;">用于登录管理后台，建议设置</small>
+                </div>
+                <div class="btn-group">
+                    <div></div>
+                    <button class="btn btn-primary" onclick="nextStep(1)">下一步 →</button>
+                </div>
+            </div>
+            
+            <!-- 步骤2: 订阅配置 -->
+            <div id="step-2" class="step-content" style="display:none;">
+                <div class="tips">
+                    订阅配置可选。稍后可在管理面板中修改。
+                </div>
                 <div class="form-group">
                     <label>订阅类型</label>
-                    <select id="subType" onchange="toggleSubUrl()">
+                    <select id="sub-type" onchange="toggleSubFields()">
                         <option value="none">暂不配置</option>
                         <option value="remote">远程订阅 URL</option>
                         <option value="local">本地订阅文件</option>
                     </select>
-                    <p class="tips">可跳过，后续在控制面板中配置</p>
                 </div>
-                <div id="subUrlGroup" class="form-group hidden">
+                <div id="sub-remote" class="form-group" style="display:none;">
                     <label>订阅 URL</label>
-                    <input type="text" id="subUrl" placeholder="https://example.com/api/v1/client/subscribe?token=xxx">
+                    <input type="text" id="sub-url" placeholder="https://example.com/api/v1/client/subscribe?token=xxx" />
                 </div>
-                <div id="subPathGroup" class="form-group hidden">
-                    <label>本地订阅文件</label>
-                    <input type="text" id="subPath" placeholder="/vol1/@appshare/miproxy/sub.yaml">
+                <div id="sub-local" class="form-group" style="display:none;">
+                    <label>本地订阅文件路径</label>
+                    <input type="text" id="sub-path" placeholder="/vol1/@appshare/miproxy/sub.yaml" />
+                </div>
+                <div class="form-group">
+                    <label>自动刷新间隔</label>
+                    <select id="refresh-interval">
+                        <option value="0">关闭自动刷新</option>
+                        <option value="1">每 1 小时</option>
+                        <option value="6">每 6 小时</option>
+                        <option value="12">每 12 小时</option>
+                        <option value="24">每 24 小时</option>
+                    </select>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="prevStep(2)">← 上一步</button>
+                    <button class="btn btn-primary" onclick="nextStep(2)">下一步 →</button>
                 </div>
             </div>
-            <button class="btn btn-primary" id="configBtn" onclick="saveConfig()">完成配置</button>
+            
+            <!-- 步骤3: 完成 -->
+            <div id="step-3" class="step-content" style="display:none;">
+                <div id="install-result"></div>
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="prevStep(3)">← 上一步</button>
+                    <button class="btn btn-primary" id="btn-install" onclick="doInstall()">完 成 安 装</button>
+                </div>
+            </div>
         </div>
         
-        <!-- 面板选择 -->
-        <div id="panelView" class="hidden">
-            <p class="subtitle">服务已就绪，请选择控制面板</p>
+        <!-- 首页 -->
+        <div id="home-page" class="card" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:30px;">
+                <div>
+                    <h1>MiProxy</h1>
+                    <p class="subtitle">mihomo 代理管理面板</p>
+                </div>
+                <div>
+                    <span id="service-status"></span>
+                </div>
+            </div>
+            
+            <div class="tips">
+                <strong>💡 提示：</strong>选择一个面板进入，或进入管理后台修改配置。
+            </div>
+            
             <div class="panels">
-                <a href="/ui/zashboard/" class="panel-card zashboard">
-                    <h2>Zashboard</h2>
-                    <p>现代化界面，功能丰富<br>支持节点管理、规则配置</p>
-                    <span class="badge badge-recommend">推荐</span>
-                </a>
-                <a href="/ui/metacubexd/" class="panel-card metacubexd">
-                    <h2>MetaCubeXD</h2>
-                    <p>经典 Clash 风格，轻量稳定<br>简洁直观，易于操作</p>
-                    <span class="badge badge-lightweight">轻量</span>
-                </a>
+                <div class="panel-card zashboard" onclick="openPanel('zashboard')">
+                    <h3>📊 Zashboard</h3>
+                    <p>现代化界面，功能丰富</p>
+                </div>
+                <div class="panel-card metacubexd" onclick="openPanel('metacubexd')">
+                    <h3>🎛️ MetaCubeXD</h3>
+                    <p>经典 Clash 风格</p>
+                </div>
+                <div class="panel-card admin" onclick="openAdmin()">
+                    <h3>⚙️ 管理后台</h3>
+                    <p>配置管理、订阅设置</p>
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p>MiProxy v2.7 | mihomo 代理核心</p>
             </div>
         </div>
         
-        <!-- 备份恢复提示 -->
-        <div id="restoreView" class="hidden">
-            <div class="success-box">
-                <div class="success-icon">📦</div>
-                <p class="success-text">检测到保留数据，配置已自动恢复！</p>
+        <!-- 管理后台 -->
+        <div id="admin-page" class="card" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2>⚙️ 配置管理</h2>
+                <button class="btn btn-secondary" onclick="goHome()">← 返回首页</button>
             </div>
-            <button class="btn btn-primary" onclick="showPanelView()">打开控制面板</button>
-        </div>
-        
-        <div class="footer">
-            <p id="versionText">MiProxy v2.7.1 | mihomo 代理核心</p>
+            
+            <div id="admin-content">
+                <div class="config-section">
+                    <h3>📡 订阅配置</h3>
+                    <div class="form-group">
+                        <label>订阅类型</label>
+                        <select id="cfg-sub-type" onchange="toggleAdminSubFields()">
+                            <option value="none">暂不配置</option>
+                            <option value="remote">远程订阅 URL</option>
+                            <option value="local">本地订阅文件</option>
+                        </select>
+                    </div>
+                    <div id="cfg-sub-remote" class="form-group" style="display:none;">
+                        <label>订阅 URL</label>
+                        <input type="text" id="cfg-sub-url" placeholder="https://example.com/api/v1/client/subscribe?token=xxx" />
+                    </div>
+                    <div id="cfg-sub-local" class="form-group" style="display:none;">
+                        <label>本地订阅文件路径</label>
+                        <input type="text" id="cfg-sub-path" placeholder="/vol1/@appshare/miproxy/sub.yaml" />
+                    </div>
+                    <div class="form-group">
+                        <label>自动刷新间隔</label>
+                        <select id="cfg-refresh-interval">
+                            <option value="0">关闭自动刷新</option>
+                            <option value="1">每 1 小时</option>
+                            <option value="6">每 6 小时</option>
+                            <option value="12">每 12 小时</option>
+                            <option value="24">每 24 小时</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="config-section">
+                    <h3>🔧 服务控制</h3>
+                    <button class="btn btn-primary" id="btn-restart" onclick="restartService()">
+                        🔄 重启服务
+                    </button>
+                    <span id="restart-status" style="margin-left:15px; color:#666;"></span>
+                </div>
+            </div>
+            
+            <div id="admin-result" style="display:none;"></div>
+            
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="goHome()">取消</button>
+                <button class="btn btn-primary" id="btn-save" onclick="saveConfig()">保存配置</button>
+            </div>
         </div>
     </div>
-
+    
     <script>
-        // 状态检测
-        async function checkStatus() {
+        // 全局状态
+        let gInstalled = false;
+        let gConfig = {};
+        
+        // ========== 初始化 ==========
+        document.addEventListener('DOMContentLoaded', async function() {
+            // 隐藏加载，显示首页（暂时）
+            document.getElementById('loading').style.display = 'none';
+            
+            // 检测安装状态
             try {
-                const resp = await fetch('/cgi-bin/status.cgi');
-                if (!resp.ok) throw new Error('服务器连接失败');
-                const data = await resp.json();
-                return data;
+                const res = await fetch('status.cgi');
+                const data = await res.json();
+                gInstalled = data.installed;
+                gConfig = data.config || {};
+                
+                if (gInstalled) {
+                    showHome();
+                } else {
+                    showInstall();
+                }
             } catch (e) {
-                console.error('状态检测失败:', e);
-                return null;
+                console.error('检测失败:', e);
+                showInstall();
             }
+        });
+        
+        // ========== 页面切换 ==========
+        function showInstall() {
+            document.getElementById('login-page').style.display = 'none';
+            document.getElementById('install-page').style.display = 'block';
+            document.getElementById('home-page').style.display = 'none';
+            document.getElementById('admin-page').style.display = 'none';
         }
         
-        // 检测服务状态
-        async function checkServiceStatus() {
-            try {
-                const resp = await fetch('/cgi-bin/status.cgi?check=service');
-                if (!resp.ok) return false;
-                const data = await resp.json();
-                return data.running === true;
-            } catch {
-                return false;
-            }
+        function showHome() {
+            document.getElementById('login-page').style.display = 'none';
+            document.getElementById('install-page').style.display = 'none';
+            document.getElementById('home-page').style.display = 'block';
+            document.getElementById('admin-page').style.display = 'none';
+            checkServiceStatus();
         }
         
-        // 启动服务
-        async function startService() {
-            try {
-                const resp = await fetch('/cgi-bin/config.cgi?action=start', {
-                    method: 'POST'
-                });
-                return resp.ok;
-            } catch {
-                return false;
-            }
+        function showAdmin() {
+            document.getElementById('login-page').style.display = 'none';
+            document.getElementById('install-page').style.display = 'none';
+            document.getElementById('home-page').style.display = 'none';
+            document.getElementById('admin-page').style.display = 'block';
+            loadAdminConfig();
         }
         
-        // 主流程
-        async function init() {
-            const loadingView = document.getElementById('loadingView');
-            const loadingText = document.getElementById('loadingText');
-            const errorView = document.getElementById('errorView');
-            const configView = document.getElementById('configView');
-            const panelView = document.getElementById('panelView');
-            const restoreView = document.getElementById('restoreView');
-            const subtitle = document.getElementById('pageSubtitle');
-            
-            loadingText.textContent = '正在检测配置状态...';
-            
-            const status = await checkStatus();
-            
-            if (!status) {
-                // 无法连接服务器
-                loadingView.classList.add('hidden');
-                errorView.classList.remove('hidden');
-                document.getElementById('errorText').textContent = '无法连接服务器，请确保应用已正确安装';
-                return;
-            }
-            
-            if (status.has_backup && !status.configured) {
-                // 有备份但未恢复 - 自动恢复
-                loadingText.textContent = '正在恢复配置...';
-                const resp = await fetch('/cgi-bin/config.cgi?action=restore', {
-                    method: 'POST'
-                });
-                if (resp.ok) {
-                    loadingView.classList.add('hidden');
-                    restoreView.classList.remove('hidden');
-                    subtitle.textContent = '数据恢复成功';
+        function goHome() {
+            showHome();
+        }
+        
+        // ========== 安装向导 ==========
+        function nextStep(current) {
+            // 验证当前步骤
+            if (current === 1) {
+                const secret = document.getElementById('secret').value;
+                if (!secret) {
+                    alert('请设置管理密钥');
                     return;
                 }
             }
             
-            if (!status.configured) {
-                // 未配置 - 显示配置向导
-                loadingView.classList.add('hidden');
-                configView.classList.remove('hidden');
-                subtitle.textContent = '首次配置';
+            // 切换步骤
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-' + current).style.display = 'none';
+            document.getElementById('step-' + (current + 1)).style.display = 'block';
+            document.querySelector('.step[data-step="' + (current + 1) + '"]').classList.add('active');
+            
+            if (current === 2) {
+                // 准备安装
+                prepareInstall();
+            }
+        }
+        
+        function prevStep(current) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-' + current).style.display = 'none';
+            document.getElementById('step-' + (current - 1)).style.display = 'block';
+            document.querySelector('.step[data-step="' + (current - 1) + '"]').classList.add('active');
+        }
+        
+        function toggleSubFields() {
+            const type = document.getElementById('sub-type').value;
+            document.getElementById('sub-remote').style.display = type === 'remote' ? 'block' : 'none';
+            document.getElementById('sub-local').style.display = type === 'local' ? 'block' : 'none';
+        }
+        
+        function toggleAdminSubFields() {
+            const type = document.getElementById('cfg-sub-type').value;
+            document.getElementById('cfg-sub-remote').style.display = type === 'remote' ? 'block' : 'none';
+            document.getElementById('cfg-sub-local').style.display = type === 'local' ? 'block' : 'none';
+        }
+        
+        function prepareInstall() {
+            const html = `
+                <div class="success-message">
+                    <h3>✅ 准备完成</h3>
+                    <p>配置信息：</p>
+                    <ul style="text-align:left; display:inline-block; margin:10px 0;">
+                        <li>HTTP 端口: <strong>${document.getElementById('http-port').value}</strong></li>
+                        <li>API 端口: <strong>${document.getElementById('api-port').value}</strong></li>
+                        <li>订阅类型: <strong>${document.getElementById('sub-type').value}</strong></li>
+                    </ul>
+                    <p>点击"完成安装"开始配置。</p>
+                </div>
+            `;
+            document.getElementById('install-result').innerHTML = html;
+        }
+        
+        async function doInstall() {
+            const btn = document.getElementById('btn-install');
+            btn.disabled = true;
+            btn.textContent = '安装中...';
+            
+            const config = {
+                http_port: document.getElementById('http-port').value,
+                api_port: document.getElementById('api-port').value,
+                secret: document.getElementById('secret').value,
+                sub_type: document.getElementById('sub-type').value,
+                sub_url: document.getElementById('sub-url').value,
+                sub_path: document.getElementById('sub-path').value,
+                refresh_interval: document.getElementById('refresh-interval').value
+            };
+            
+            try {
+                const res = await fetch('config.cgi?action=install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    document.getElementById('install-result').innerHTML = `
+                        <div class="success-message">
+                            <h3>🎉 安装成功！</h3>
+                            <p>服务正在启动中，请稍候...</p>
+                        </div>
+                    `;
+                    setTimeout(() => {
+                        gInstalled = true;
+                        showHome();
+                    }, 2000);
+                } else {
+                    alert('安装失败: ' + (data.error || '未知错误'));
+                    btn.disabled = false;
+                    btn.textContent = '完 成 安 装';
+                }
+            } catch (e) {
+                alert('安装失败: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = '完 成 安 装';
+            }
+        }
+        
+        // ========== 首页功能 ==========
+        async function checkServiceStatus() {
+            try {
+                const res = await fetch('status.cgi?check=service');
+                const data = await res.json();
+                const statusEl = document.getElementById('service-status');
+                if (data.running) {
+                    statusEl.innerHTML = '<span class="status-badge status-running">● 运行中</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="status-badge status-stopped">○ 已停止</span>';
+                }
+            } catch (e) {
+                console.error('状态检测失败:', e);
+            }
+        }
+        
+        function openPanel(panel) {
+            // 直接跳转到面板 URL
+            if (panel === 'zashboard') {
+                window.location.href = 'zashboard/';
+            } else if (panel === 'metacubexd') {
+                window.location.href = 'metacubexd/';
+            }
+        }
+        
+        function openAdmin() {
+            // 检查是否已认证
+            if (sessionStorage.getItem('miproxy_auth')) {
+                showAdmin();
+            } else {
+                document.getElementById('login-page').style.display = 'block';
+                document.getElementById('install-page').style.display = 'none';
+                document.getElementById('home-page').style.display = 'none';
+                document.getElementById('admin-page').style.display = 'none';
+                document.getElementById('login-password').focus();
+            }
+        }
+        
+        // ========== 登录认证 ==========
+        async function doLogin() {
+            const password = document.getElementById('login-password').value;
+            if (!password) {
+                document.getElementById('login-error').textContent = '请输入管理密钥';
+                document.getElementById('login-error').style.display = 'block';
                 return;
             }
             
-            // 已配置 - 检查服务状态
-            loadingText.textContent = '正在检查服务状态...';
-            const serviceRunning = await checkServiceStatus();
-            
-            if (!serviceRunning) {
-                // 服务未启动 - 启动服务
-                loadingView.classList.remove('hidden');
-                document.getElementById('startingView').classList.remove('hidden');
+            try {
+                const res = await fetch('auth.cgi?action=login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password })
+                });
+                const data = await res.json();
                 
-                const started = await startService();
-                if (started) {
-                    // 等待服务启动
-                    let retries = 10;
-                    while (retries > 0) {
-                        await new Promise(r => setTimeout(r, 1000));
-                        const running = await checkServiceStatus();
-                        if (running) break;
-                        retries--;
-                    }
+                if (data.success) {
+                    sessionStorage.setItem('miproxy_auth', 'true');
+                    showAdmin();
+                } else {
+                    document.getElementById('login-error').textContent = '密钥验证失败';
+                    document.getElementById('login-error').style.display = 'block';
                 }
+            } catch (e) {
+                document.getElementById('login-error').textContent = '验证失败: ' + e.message;
+                document.getElementById('login-error').style.display = 'block';
             }
-            
-            // 显示面板选择
-            loadingView.classList.add('hidden');
-            panelView.classList.remove('hidden');
-            subtitle.textContent = '服务已就绪';
         }
         
-        // 保存配置
+        // ========== 管理后台 ==========
+        async function loadAdminConfig() {
+            try {
+                const res = await fetch('config.cgi?action=get');
+                const data = await res.json();
+                if (data.config) {
+                    document.getElementById('cfg-sub-type').value = data.config.sub_type || 'none';
+                    document.getElementById('cfg-sub-url').value = data.config.sub_url || '';
+                    document.getElementById('cfg-sub-path').value = data.config.sub_path || '';
+                    document.getElementById('cfg-refresh-interval').value = data.config.refresh_interval || '0';
+                    toggleAdminSubFields();
+                }
+            } catch (e) {
+                console.error('加载配置失败:', e);
+            }
+        }
+        
         async function saveConfig() {
-            const btn = document.getElementById('configBtn');
-            const subType = document.getElementById('subType').value;
-            const subUrl = document.getElementById('subUrl').value;
-            const subPath = document.getElementById('subPath').value;
-            
+            const btn = document.getElementById('btn-save');
             btn.disabled = true;
             btn.textContent = '保存中...';
             
+            const config = {
+                sub_type: document.getElementById('cfg-sub-type').value,
+                sub_url: document.getElementById('cfg-sub-url').value,
+                sub_path: document.getElementById('cfg-sub-path').value,
+                refresh_interval: document.getElementById('cfg-refresh-interval').value
+            };
+            
             try {
-                const resp = await fetch('/cgi-bin/config.cgi?action=save', {
+                const res = await fetch('config.cgi?action=save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        sub_type: subType,
-                        sub_url: subUrl,
-                        sub_path: subPath
-                    })
+                    body: JSON.stringify(config)
                 });
+                const data = await res.json();
                 
-                if (!resp.ok) throw new Error('保存失败');
-                
-                // 启动服务
-                btn.textContent = '正在启动服务...';
-                await startService();
-                
-                // 等待服务启动
-                let retries = 15;
-                while (retries > 0) {
-                    await new Promise(r => setTimeout(r, 1000));
-                    const running = await checkServiceStatus();
-                    if (running) break;
-                    retries--;
+                if (data.success) {
+                    document.getElementById('admin-result').innerHTML = `
+                        <div class="success-message" style="margin-top:20px;">
+                            <h3>✅ 配置已保存</h3>
+                            <p>配置文件已更新。点击"重启服务"使配置生效。</p>
+                        </div>
+                    `;
+                    document.getElementById('admin-result').style.display = 'block';
+                } else {
+                    alert('保存失败: ' + (data.error || '未知错误'));
                 }
-                
-                // 显示成功
-                document.getElementById('configView').classList.add('hidden');
-                document.getElementById('panelView').classList.remove('hidden');
-                document.getElementById('pageSubtitle').textContent = '配置完成，服务已启动';
-                
             } catch (e) {
-                alert('配置保存失败: ' + e.message);
-                btn.disabled = false;
-                btn.textContent = '完成配置';
+                alert('保存失败: ' + e.message);
             }
+            
+            btn.disabled = false;
+            btn.textContent = '保存配置';
         }
         
-        // 显示面板选择
-        function showPanelView() {
-            document.getElementById('restoreView').classList.add('hidden');
-            document.getElementById('panelView').classList.remove('hidden');
+        async function restartService() {
+            const btn = document.getElementById('btn-restart');
+            const status = document.getElementById('restart-status');
+            
+            btn.disabled = true;
+            btn.textContent = '重启中...';
+            status.textContent = '正在重启服务...';
+            
+            try {
+                const res = await fetch('config.cgi?action=restart', {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    status.textContent = '✓ 服务已重启';
+                    status.style.color = '#16a34a';
+                    checkServiceStatus();
+                } else {
+                    status.textContent = '✗ 重启失败: ' + (data.error || '');
+                    status.style.color = '#dc2626';
+                }
+            } catch (e) {
+                status.textContent = '✗ 重启失败: ' + e.message;
+                status.style.color = '#dc2626';
+            }
+            
+            btn.disabled = false;
+            btn.textContent = '🔄 重启服务';
         }
         
-        // 切换订阅类型显示
-        function toggleSubUrl() {
-            const subType = document.getElementById('subType').value;
-            document.getElementById('subUrlGroup').classList.toggle('hidden', subType !== 'remote');
-            document.getElementById('subPathGroup').classList.toggle('hidden', subType !== 'local');
-        }
-        
-        // 页面加载时自动检测
-        window.addEventListener('DOMContentLoaded', init);
+        // 回车登录
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && document.getElementById('login-page').style.display !== 'none') {
+                doLogin();
+            }
+        });
     </script>
 </body>
 </html>

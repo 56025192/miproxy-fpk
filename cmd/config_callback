@@ -1,19 +1,11 @@
 #!/bin/bash
+# MiProxy 配置变更回调（v6 修复版）
+# 关键修复：extract_yaml_block 支持订阅源特殊格式（proxies: 块中列表项为顶格 -）
+# 完全同步订阅源的 proxies / proxy-groups / rules / dns / hosts 字段到 config.yaml
 
-# MiProxy 配置变更回调（v5 重构版）
-# 关键变更：
-#   1. 复制订阅源 proxies 块到主 config（解决 Parse 时序问题）
-#   2. 完全同步订阅源的 proxy-groups / rules / dns / hosts 字段
-#   3. 不使用 proxy-providers 机制（订阅更新靠 callback 触发）
-# 直接在 bash 中生成完整 config.yaml（不依赖 PyYAML）
-
-# ============ 调试日志 ============
 DEBUG_LOG="${TRIM_PKGVAR}/config_callback.log"
 exec 2>>"${DEBUG_LOG}"
-echo "===== config_callback v5 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
-echo "TRIM_APPDEST=${TRIM_APPDEST}" >> "${DEBUG_LOG}"
-echo "TRIM_PKGVAR=${TRIM_PKGVAR}" >> "${DEBUG_LOG}"
-echo "TRIM_PKGETC=${TRIM_PKGETC}" >> "${DEBUG_LOG}"
+echo "===== config_callback v6 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
@@ -30,10 +22,7 @@ SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
 TUN_ENABLE="${wizard_tun_enable:-false}"
 
-# 从 settings.conf 读取上次保存的端口和订阅 URL
-HTTP_PORT=""
-API_PORT=""
-PREV_SUB_URL=""
+HTTP_PORT=""; API_PORT=""; PREV_SUB_URL=""
 if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
     HTTP_PORT=$(grep '^wizard_http_port=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
     API_PORT=$(grep '^wizard_api_port=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
@@ -42,293 +31,170 @@ fi
 HTTP_PORT="${HTTP_PORT:-7890}"
 API_PORT="${API_PORT:-9090}"
 
-if [ "${REFRESH_INTERVAL_HOURS}" = "0" ]; then
-    REFRESH_INTERVAL_SEC=0
-else
-    REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
-fi
+[ "${REFRESH_INTERVAL_HOURS}" = "0" ] && REFRESH_INTERVAL_SEC=0 || REFRESH_INTERVAL_SEC=$((REFRESH_INTERVAL_HOURS * 3600))
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
-log_msg "config_callback v5 启动（修复 Parse 时序：复制订阅源 proxies 到主 config）"
+log_msg "config_callback v6 启动"
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
-log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
-log_msg "  PREV_SUB_URL=${PREV_SUB_URL:-（空）}"
-log_msg "  REFRESH_INTERVAL=${REFRESH_INTERVAL_HOURS}h"
-log_msg "  TUN_ENABLE=${TUN_ENABLE}"
+log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, PREV=${PREV_SUB_URL:-（空）}"
 
-# 从 SUB_URL 自动提取订阅源域名，加入 fake-ip-filter（兜底）
 SUB_DOMAIN_FILTER=""
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
     domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
-    if [ -n "${domain}" ]; then
-        SUB_DOMAIN_FILTER="    - \"${domain}\"
-    - \"*.${domain}\"
-"
-        log_msg "  订阅源域名加入 fake-ip-filter: ${domain}"
-    fi
+    [ -n "${domain}" ] && SUB_DOMAIN_FILTER="    - \"${domain}\"\n    - \"*.${domain}\"\n"
 fi
 
-# ============ 订阅源下载与字段提取（v5 核心）============
 SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
 mkdir -p "${VAR_DIR}/proxy_providers"
 
-# 远程订阅：URL 变了强制重下；URL 没变看缓存是否存在
 NEED_DOWNLOAD=0
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
     if [ "${PREV_SUB_URL}" != "${SUB_URL}" ]; then
-        NEED_DOWNLOAD=1
-        log_msg "  📌 订阅 URL 变更（${PREV_SUB_URL:-首次} → ${SUB_URL}），强制重新下载"
+        NEED_DOWNLOAD=1; log_msg "  📌 订阅 URL 变更，强制重下"
     elif [ ! -f "${SUB_CACHE_PATH}" ]; then
-        NEED_DOWNLOAD=1
-        log_msg "  📌 订阅缓存不存在，重新下载"
+        NEED_DOWNLOAD=1; log_msg "  📌 缓存不存在，重新下载"
     else
         log_msg "  ✓ 订阅 URL 未变且缓存存在，复用"
     fi
 fi
 
 if [ "${NEED_DOWNLOAD}" = "1" ]; then
-    log_msg "下载远程订阅到 cache: ${SUB_URL}"
-    if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>>"${DEBUG_LOG}"; then
-        if [ -s "${SUB_CACHE_PATH}.tmp" ]; then
-            mv "${SUB_CACHE_PATH}.tmp" "${SUB_CACHE_PATH}"
-            sub_size=$(stat -c%s "${SUB_CACHE_PATH}" 2>/dev/null || wc -c < "${SUB_CACHE_PATH}")
-            log_msg "  ✅ 订阅下载成功: ${sub_size} bytes"
-        else
-            log_msg "  ⚠️ 订阅文件为空"
-            rm -f "${SUB_CACHE_PATH}.tmp"
-        fi
+    log_msg "下载远程订阅: ${SUB_URL}"
+    if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>>"${DEBUG_LOG}" && [ -s "${SUB_CACHE_PATH}.tmp" ]; then
+        mv "${SUB_CACHE_PATH}.tmp" "${SUB_CACHE_PATH}"
+        log_msg "  ✅ 订阅下载成功: $(stat -c%s "${SUB_CACHE_PATH}" 2>/dev/null || wc -c < "${SUB_CACHE_PATH}") bytes"
     else
-        log_msg "  ⚠️ 订阅下载失败，将使用本地默认代理组/规则/DNS"
+        log_msg "  ⚠️ 订阅下载失败，使用上次缓存"
         rm -f "${SUB_CACHE_PATH}.tmp"
     fi
 fi
 
-# 本地订阅：拷贝到 cache
-if [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
-    cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
-    log_msg "  ✅ 本地订阅已拷贝到 cache"
-fi
+[ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ] && cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
 
-# 用 Python 标准库提取 yaml 顶级块（无需 PyYAML）
+# 修复版 yaml 块提取：支持订阅源特殊格式（proxies: 块中列表项为顶格 -）
 extract_yaml_block() {
-    local key="$1"
-    local file="$2"
-    python3 - "${key}" "${file}" 2>/dev/null <<'PYEOF'
+    python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import sys
 key = sys.argv[1] + ":"
-file_path = sys.argv[2]
 try:
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(sys.argv[2], 'r', encoding='utf-8') as f:
         lines = f.readlines()
-except Exception:
+except:
     sys.exit(0)
 result = []
-in_block = False
+found = False
 for line in lines:
     stripped = line.rstrip('\n')
     if not stripped.strip():
-        if in_block:
-            result.append(line)
+        if found: result.append(line)
         continue
-    is_top_level = bool(stripped) and not stripped[0].isspace()
-    if is_top_level:
+    is_top = not stripped[0].isspace()
+    if is_top:
         if stripped.startswith(key):
-            in_block = True
+            found = True
             result.append(line)
-        elif in_block:
-            in_block = False
-    elif in_block:
+        elif found:
+            if stripped.startswith('-'):
+                result.append(line)
+            else:
+                break
+    elif found:
         result.append(line)
 sys.stdout.write(''.join(result))
 PYEOF
 }
 
-# 从订阅源 cache 中提取所有相关字段（v5：新增 proxies, hosts）
-SUB_PROXIES=""
-SUB_HOSTS=""
-SUB_PG=""
-SUB_RULES=""
-SUB_DNS=""
+SUB_PROXIES=""; SUB_HOSTS=""; SUB_PG=""; SUB_RULES=""; SUB_DNS=""
 if [ -f "${SUB_CACHE_PATH}" ]; then
     SUB_PROXIES=$(extract_yaml_block "proxies" "${SUB_CACHE_PATH}")
     SUB_HOSTS=$(extract_yaml_block "hosts" "${SUB_CACHE_PATH}")
     SUB_PG=$(extract_yaml_block "proxy-groups" "${SUB_CACHE_PATH}")
     SUB_RULES=$(extract_yaml_block "rules" "${SUB_CACHE_PATH}")
     SUB_DNS=$(extract_yaml_block "dns" "${SUB_CACHE_PATH}")
-
-    log_msg "  📦 订阅源 proxies: $(printf '%s' "${SUB_PROXIES}" | wc -l) 行"
-    log_msg "  📦 订阅源 hosts: $(printf '%s' "${SUB_HOSTS}" | wc -l) 行"
-    log_msg "  📦 订阅源 proxy-groups: $(printf '%s' "${SUB_PG}" | wc -l) 行"
-    log_msg "  📦 订阅源 rules: $(printf '%s' "${SUB_RULES}" | wc -l) 行"
-    log_msg "  📦 订阅源 dns: $(printf '%s' "${SUB_DNS}" | wc -l) 行"
-
-    # 完整性检查：dns 块必须有 nameserver 才算完整
-    if [ -n "${SUB_DNS}" ] && ! printf '%s' "${SUB_DNS}" | grep -q "nameserver"; then
-        log_msg "  ⚠️ 订阅源 dns 块缺 nameserver，回退到本地默认 DNS"
-        SUB_DNS=""
-    fi
+    log_msg "  📦 proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行 hosts:$(printf '%s' "${SUB_HOSTS}" | wc -l)行 pg:$(printf '%s' "${SUB_PG}" | wc -l)行 rules:$(printf '%s' "${SUB_RULES}" | wc -l)行 dns:$(printf '%s' "${SUB_DNS}" | wc -l)行"
+    [ -n "${SUB_DNS}" ] && ! printf '%s' "${SUB_DNS}" | grep -q "nameserver" && SUB_DNS="" && log_msg "  ⚠️ dns 缺 nameserver，回退本地默认"
 fi
 
-# ============ 重新生成完整 config.yaml（v5：含订阅源完整同步）============
 log_msg "重新生成 config.yaml..."
 
 {
-    echo "# MiProxy 主配置（自动重新生成于 $(date '+%Y-%m-%d %H:%M:%S')）"
-    echo "# 由 miproxy-fpk v5 config_callback 生成"
-    echo "# v5：完整同步订阅源 proxies/proxy-groups/rules/dns/hosts 字段"
+    echo "# MiProxy 主配置（v6：完整同步订阅源所有字段）"
     echo ""
     echo "mixed-port: ${HTTP_PORT}"
     echo "allow-lan: true"
     echo "mode: rule"
     echo "log-level: info"
     echo "ipv6: false"
-    echo ""
-    echo "# 控制面板"
     echo "external-controller: 0.0.0.0:${API_PORT}"
     echo "external-ui: ${UI_TARGET}"
     echo "external-ui-name: zashboard"
-    echo ""
-
-    # 密钥
-    if [ -n "${SECRET}" ]; then
-        echo "# 控制面板密钥"
-        echo "secret: \"${SECRET}\""
-        echo ""
-    fi
-
-    # 代理用户验证
-    if [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ]; then
-        echo "# 代理用户验证"
-        echo "authentication:"
-        echo "  - \"${PROXY_USER}:${PROXY_PASS}\""
-        echo ""
-    fi
-
-    echo "# 跨域允许"
+    [ -n "${SECRET}" ] && echo "secret: \"${SECRET}\""
+    [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ] && echo "authentication:" && echo "  - \"${PROXY_USER}:${PROXY_PASS}\""
     echo "external-controller-cors:"
     echo "  allow-private-network: true"
-    echo "  allow-origins:"
-    echo "    - \"*\""
-    echo ""
-    echo "# GEO 数据库"
+    echo "  allow-origins: [\"*\"]"
     echo "geodata-mode: true"
     echo "geodata-loader: memconservative"
-    echo ""
-    echo "# TUN"
     echo "tun:"
     echo "  enable: ${TUN_ENABLE}"
     echo "  stack: system"
     echo "  auto-route: true"
     echo "  auto-redirect: true"
     echo "  auto-detect-interface: true"
-    echo "  dns-hijack:"
-    echo "    - any:53"
-    echo "    - tcp://any:53"
-    echo ""
+    echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
 
-    # ============ proxies（v5 关键：复制订阅源节点列表到主 config，解决 Parse 时序问题）============
-    if [ -n "${SUB_PROXIES}" ]; then
-        echo "# 节点列表（来自订阅源同步，解决 Parse 时 mihomo 找不到节点的问题）"
-        echo "${SUB_PROXIES}"
-        echo ""
-    fi
+    [ -n "${SUB_PROXIES}" ] && echo "# 节点列表（来自订阅源）" && echo "${SUB_PROXIES}"
+    [ -n "${SUB_HOSTS}" ] && echo "# hosts" && echo "${SUB_HOSTS}"
 
-    # ============ hosts（v5：复制订阅源 hosts）============
-    if [ -n "${SUB_HOSTS}" ]; then
-        echo "# hosts（来自订阅源同步）"
-        echo "${SUB_HOSTS}"
-        echo ""
-    fi
-
-    # ============ proxy-groups（v5：复制订阅源代理组）============
     if [ -n "${SUB_PG}" ]; then
-        echo "# 代理组（来自订阅源同步）"
+        echo "# 代理组（来自订阅源）"
         echo "${SUB_PG}"
-        echo ""
     else
-        echo "# 代理组（本地默认）"
         echo "proxy-groups:"
-        echo "  - name: PROXY"
-        echo "    type: select"
-        echo "    proxies:"
-        echo "      - DIRECT"
-        echo "      - REJECT"
-        echo ""
+        echo "  - name: PROXY; type: select; proxies: [DIRECT, REJECT]"
     fi
 
-    # ============ rules（v5：复制订阅源规则）============
     if [ -n "${SUB_RULES}" ]; then
-        echo "# 路由规则（来自订阅源同步）"
+        echo "# 路由规则（来自订阅源）"
         echo "${SUB_RULES}"
-        echo ""
     else
-        echo "# 路由规则（本地默认）"
-        echo "rules:"
-        echo "  - GEOIP,CN,DIRECT"
-        echo "  - MATCH,PROXY"
-        echo ""
+        echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
     fi
 
-    # ============ dns（v5：复制订阅源 DNS，含 fake-ip 兼容性兜底）============
     if [ -n "${SUB_DNS}" ]; then
-        echo "# DNS（来自订阅源同步）"
+        echo "# DNS（来自订阅源）"
         echo "${SUB_DNS}"
-        echo ""
     else
-        echo "# DNS（本地默认，含订阅域名 fake-ip 白名单）"
         echo "dns:"
-        echo "  enable: true"
-        echo "  listen: 0.0.0.0:53"
-        echo "  enhanced-mode: fake-ip"
-        echo "  fake-ip-range: 198.18.0.1/16"
-        echo "  fake-ip-filter:"
-        echo "    - \"+.lan\""
-        echo "    - \"+.local\""
-        if [ -n "${SUB_DOMAIN_FILTER}" ]; then
-            echo "${SUB_DOMAIN_FILTER}"
-        fi
-        echo "  nameserver:"
-        echo "    - 223.5.5.5"
-        echo "    - 119.29.29.29"
-        echo "    - 8.8.8.8"
-        echo ""
+        echo "  enable: true; listen: 0.0.0.0:53"
+        echo "  enhanced-mode: fake-ip; fake-ip-range: 198.18.0.1/16"
+        echo "  fake-ip-filter: [\"+.lan\", \"+.local\"${SUB_DOMAIN_FILTER:+, \"${domain}\", \"*.${domain}\"}]"
+        echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
     fi
 } > "${CONFIG_FILE}"
 
 chmod 666 "${CONFIG_FILE}"
 log_msg "✅ config.yaml 已重新生成"
 
-# ============ 更新 settings.conf ============
 {
-    echo "wizard_http_port=${HTTP_PORT}"
-    echo "wizard_api_port=${API_PORT}"
-    echo "wizard_tun_enable=${TUN_ENABLE}"
-    echo "wizard_sub_type=${SUB_TYPE}"
-    echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
+    echo "wizard_http_port=${HTTP_PORT}; wizard_api_port=${API_PORT}; wizard_tun_enable=${TUN_ENABLE}"
+    echo "wizard_sub_type=${SUB_TYPE}; wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
     [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
     [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
     [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
     [ -n "${SUB_URL}" ] && echo "wizard_sub_url=${SUB_URL}"
     [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
 } > "${TRIM_PKGETC}/settings.conf"
-chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null || true
+chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
 
-# ============ 删除遗留的中间文件 ============
 rm -f "${VAR_DIR}/base.yaml" "${VAR_DIR}/subscription.yaml" "${VAR_DIR}/subscription.conf"
 
-# ============ 重启 mihomo ============
-log_msg "尝试重启 miproxy..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bash "${SCRIPT_DIR}/main" stop 2>>"${LOG_FILE}" || true
 sleep 2
-if bash "${SCRIPT_DIR}/main" start 2>>"${LOG_FILE}"; then
-    log_msg "✅ miproxy 重启成功"
-else
-    log_msg "⚠️  miproxy 重启失败，配置已保存"
-fi
-
-log_msg "===== config_callback v5 完成 ====="
+bash "${SCRIPT_DIR}/main" start 2>>"${LOG_FILE}" && log_msg "✅ miproxy 重启成功" || log_msg "⚠️  miproxy 重启失败"
+log_msg "===== config_callback v6 完成 ====="
 exit 0

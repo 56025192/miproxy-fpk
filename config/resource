@@ -1,0 +1,31 @@
+{
+    "icons": [
+        {
+            "path": "ICON.PNG",
+            "size": "64x64"
+        },
+        {
+            "path": "ICON_256.PNG",
+            "size": "256x256"
+        }
+    ],
+    "files": [
+        "cmd/main",
+        "cmd/install_init",
+        "cmd/install_callback",
+        "cmd/uninstall_init",
+        "cmd/uninstall_callback",
+        "cmd/upgrade_init",
+        "cmd/upgrade_callback",
+        "cmd/config_init",
+        "cmd/config_callback",
+        "cmd/refresh_sub",
+        "app/cgi-bin/status.cgi",
+        "app/cgi-bin/config.cgi",
+        "app/cgi-bin/auth.cgi",
+        "app/ui/index.html",
+        "wizard/config",
+        "wizard/install",
+        "wizard/uninstall"
+    ]
+}

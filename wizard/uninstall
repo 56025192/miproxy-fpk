@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Wizard uninstall script
+
+echo "Starting uninstallation..."
+
+# Run uninstall_init
+cmd/uninstall_init "$@"
+
+# Run uninstall_callback
+cmd/uninstall_callback "$@"
+
+echo "Uninstallation complete!"

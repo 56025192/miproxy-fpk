@@ -1,0 +1,37 @@
+{
+    "name": "MiProxy",
+    "description": "Proxy management for路由",
+    "version": "1.0.2",
+    "maintainer": "MiProxy Team",
+    "install": {
+        "scripts": ["cmd/main", "install"]
+    },
+    "uninstall": {
+        "scripts": ["cmd/main", "uninstall"]
+    },
+    "upgrade": {
+        "scripts": ["cmd/main", "upgrade"]
+    },
+    "config": {
+        "type": "form",
+        "items": [
+            {
+                "name": "sub_url",
+                "label": "Subscription URL",
+                "type": "text",
+                "required": true
+            },
+            {
+                "name": "auto_update",
+                "label": "Auto Update",
+                "type": "switch",
+                "default": true
+            }
+        ]
+    },
+    "ui": {
+        "title": "MiProxy",
+        "icon": "ICON.png",
+        "entry": "/app/ui/index.html"
+    }
+}

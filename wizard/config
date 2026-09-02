@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Wizard config script
+# This script is called during the installation wizard
+
+echo "Content-Type: application/json"
+echo ""
+
+# Return wizard config
+cat << 'EOF'
+{
+    "name": "MiProxy",
+    "description": "Proxy management tool",
+    "version": "1.0.2",
+    "author": "MiProxy Team",
+    "website": "https://github.com/56025192/miproxy-fpk"
+}
+EOF

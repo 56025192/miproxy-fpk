@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# $1: extension id
+
+# Restart miproxy service with new version
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then
+    ARCH_NAME="x86_64"
+elif [ "$ARCH" = "aarch64" ]; then
+    ARCH_NAME="arm64"
+else
+    ARCH_NAME="$ARCH"
+fi
+
+# Start miproxy in background
+nohup app/server/${ARCH_NAME}/miproxy -c app/data/config.yaml > /dev/null 2>&1 &

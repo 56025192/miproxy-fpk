@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# $1: extension id
+
+# Download miproxy binary
+MIPROXY_VERSION=1.0.2
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then
+    ARCH_NAME="x86_64"
+elif [ "$ARCH" = "aarch64" ]; then
+    ARCH_NAME="arm64"
+else
+    ARCH_NAME="$ARCH"
+fi
+
+mkdir -p app/server/${ARCH_NAME}
+curl -L -o app/server/${ARCH_NAME}/miproxy "https://github.com/56025192/miproxy-fpk/releases/download/v${MIPROXY_VERSION}/miproxy_${MIPROXY_VERSION}_linux_${ARCH_NAME}"
+chmod +x app/server/${ARCH_NAME}/miproxy
+
+# Download config.yaml
+mkdir -p app/data
+curl -L -o app/data/config.yaml "https://raw.githubusercontent.com/56025192/miproxy-fpk/v2.8.0/app/data/config.yaml"

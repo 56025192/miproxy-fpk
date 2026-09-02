@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# $1: extension id
+
+# Stop miproxy service
+pkill -f miproxy || true

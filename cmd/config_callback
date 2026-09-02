@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# $1: extension id
+
+# Config callback - return current config
+if [ -f app/data/config.yaml ]; then
+    cat app/data/config.yaml
+else
+    echo '{}'
+fi

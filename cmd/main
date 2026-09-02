@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# $1: action (install/uninstall/upgrade)
+# $2: extension id
+
+set -e
+
+case "$1" in
+    install)
+        shift
+        cmd/install_init "$@"
+        cmd/install_callback "$@"
+        ;;
+    uninstall)
+        shift
+        cmd/uninstall_init "$@"
+        cmd/uninstall_callback "$@"
+        ;;
+    upgrade)
+        shift
+        cmd/upgrade_init "$@"
+        cmd/upgrade_callback "$@"
+        ;;
+    config)
+        shift
+        cmd/config_init "$@"
+        cmd/config_callback "$@"
+        ;;
+    refresh_sub)
+        shift
+        cmd/refresh_sub "$@"
+        ;;
+esac

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Wizard install script
+
+echo "Starting installation..."
+
+# Run install_init
+cmd/install_init "$@"
+
+# Run install_callback  
+cmd/install_callback "$@"
+
+echo "Installation complete!"

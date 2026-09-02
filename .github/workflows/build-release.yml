@@ -1,0 +1,302 @@
+name: Build FPK
+
+on:
+  # 通过 tag 触发构建（如 v2.1.7）
+  push:
+    tags: ['v*']
+  
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (如 2.1.7)'
+        required: false
+        default: ''
+      create_release:
+        description: '创建 Release'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  # ==================== 获取变更信息 ====================
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      changes: ${{ steps.changes.outputs.changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 确定版本号
+        id: version
+        run: |
+          MANIFEST_VER=$(grep '^version' manifest | awk -F'=' '{print $2}' | tr -d ' ')
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            TAG="v${VERSION}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="${MANIFEST_VER}"
+            TAG="v${VERSION}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "📦 版本: ${VERSION}"
+
+      - name: 获取变更信息
+        id: changes
+        run: |
+          git fetch --tags --force
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "上一个版本: ${LAST_TAG:-无}"
+          
+          if [ -n "$LAST_TAG" ]; then
+            echo "=== 变更文件 ===" > /tmp/changes.txt
+            git diff ${LAST_TAG}..HEAD --name-only | head -20 >> /tmp/changes.txt
+            echo "" >> /tmp/changes.txt
+            echo "=== 提交历史 ===" >> /tmp/changes.txt
+            git log ${LAST_TAG}..HEAD --oneline --format="• %s | %an | %cr" >> /tmp/changes.txt
+          else
+            echo "=== 首次发布 ===" > /tmp/changes.txt
+            git log -10 --oneline --format="• %s | %an | %cr" >> /tmp/changes.txt
+          fi
+          
+          CHANGES=$(cat /tmp/changes.txt)
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "${CHANGES}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  # ==================== 构建 x86_64 FPK ====================
+  build-x86:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 确定版本号
+        run: |
+          echo "version=${{ needs.changes.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "tag=${{ needs.changes.outputs.tag }}" >> $GITHUB_OUTPUT
+
+      - name: 修复脚本权限
+        run: |
+          for f in cmd/main cmd/install_init cmd/install_callback cmd/uninstall_init cmd/uninstall_callback cmd/upgrade_init cmd/upgrade_callback cmd/config_init cmd/config_callback; do
+            [ -f "$f" ] && sed -i 's/\r$//' "$f" && chmod +x "$f"
+          done
+          echo "✅ 脚本权限已修复"
+
+      - name: 下载 fnpack
+        run: |
+          echo "📦 下载 fnpack..."
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+          chmod +x /tmp/fnpack
+          echo "✅ fnpack 下载完成"
+
+      - name: 准备 x86_64 包
+        run: |
+          echo "🔧 准备 x86_64 打包目录..."
+          
+          # 只保留 x86_64 的 mihomo（移动到正确位置）
+          rm -rf app/server/arm64
+          mv app/server/x86_64/mihomo app/server/mihomo
+          rm -rf app/server/x86_64
+          
+          # 修改 manifest 版本和平台
+          sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
+          sed -i "s/^platform.*=.*/platform              = x86/" manifest
+          
+          # 验证
+          echo "=== 目录结构 ==="
+          ls -la app/server/
+          echo ""
+          echo "=== manifest ==="
+          grep -E "^version|^platform" manifest
+
+      - name: 打包 FPK
+        id: build-x86
+        run: |
+          echo "🔨 开始打包 x86_64..."
+          /tmp/fnpack build --directory . 2>&1
+          
+          FPK=$(ls *.fpk 2>/dev/null | head -1)
+          if [ -n "$FPK" ]; then
+            NEW_FPK="miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk"
+            mv "$FPK" "$NEW_FPK"
+            echo "✅ FPK 打包成功: $NEW_FPK"
+          else
+            echo "❌ FPK 打包失败"
+            ls -la
+            exit 1
+          fi
+
+      - name: 上传 FPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: miproxy-x86_64
+          path: "*.fpk"
+          retention-days: 7
+
+  # ==================== 构建 ARM64 FPK ====================
+  build-arm:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 确定版本号
+        run: |
+          echo "version=${{ needs.changes.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "tag=${{ needs.changes.outputs.tag }}" >> $GITHUB_OUTPUT
+
+      - name: 修复脚本权限
+        run: |
+          for f in cmd/main cmd/install_init cmd/install_callback cmd/uninstall_init cmd/uninstall_callback cmd/upgrade_init cmd/upgrade_callback cmd/config_init cmd/config_callback; do
+            [ -f "$f" ] && sed -i 's/\r$//' "$f" && chmod +x "$f"
+          done
+          echo "✅ 脚本权限已修复"
+
+      - name: 下载 fnpack
+        run: |
+          echo "📦 下载 fnpack..."
+          curl -fsSL -o /tmp/fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+          chmod +x /tmp/fnpack
+          echo "✅ fnpack 下载完成"
+
+      - name: 准备 ARM64 包
+        run: |
+          echo "🔧 准备 ARM64 打包目录..."
+          
+          # 只保留 ARM64 的 mihomo（移动到正确位置）
+          rm -rf app/server/x86_64
+          mv app/server/arm64/mihomo app/server/mihomo
+          rm -rf app/server/arm64
+          
+          # 修改 manifest 版本和平台
+          sed -i "s/^version.*=.*/version               = ${{ needs.changes.outputs.version }}/" manifest
+          sed -i "s/^platform.*=.*/platform              = arm/" manifest
+          
+          # 验证
+          echo "=== 目录结构 ==="
+          ls -la app/server/
+          echo ""
+          echo "=== manifest ==="
+          grep -E "^version|^platform" manifest
+
+      - name: 打包 FPK
+        id: build-arm
+        run: |
+          echo "🔨 开始打包 ARM64..."
+          /tmp/fnpack build --directory . 2>&1
+          
+          FPK=$(ls *.fpk 2>/dev/null | head -1)
+          if [ -n "$FPK" ]; then
+            NEW_FPK="miproxy-${{ needs.changes.outputs.version }}-arm64.fpk"
+            mv "$FPK" "$NEW_FPK"
+            echo "✅ FPK 打包成功: $NEW_FPK"
+          else
+            echo "❌ FPK 打包失败"
+            ls -la
+            exit 1
+          fi
+
+      - name: 上传 FPK
+        uses: actions/upload-artifact@v4
+        with:
+          name: miproxy-arm64
+          path: "*.fpk"
+          retention-days: 7
+
+  # ==================== 创建草稿 Release ====================
+  release:
+    needs: [changes, build-x86, build-arm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 下载 x86_64 FPK
+        uses: actions/download-artifact@v4
+        with:
+          name: miproxy-x86_64
+          path: .
+
+      - name: 下载 ARM64 FPK
+        uses: actions/download-artifact@v4
+        with:
+          name: miproxy-arm64
+          path: .
+
+      - name: 创建草稿 Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.changes.outputs.tag }}
+          name: "MiProxy ${{ needs.changes.outputs.version }}"
+          draft: true
+          prerelease: false
+          body: |
+            ## MiProxy ${{ needs.changes.outputs.version }}
+
+            飞牛 NAS (fnOS) FPK 应用
+
+            ---
+
+            ### 📋 变更详情
+
+            ```
+            ${{ needs.changes.outputs.changes }}
+            ```
+
+            ---
+
+            ### 📥 下载
+
+            | 架构 | 文件 | 说明 |
+            |------|------|------|
+            | x86_64 | [miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.changes.outputs.tag }}/miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk) | Intel/AMD 处理器 |
+            | ARM64 | [miproxy-${{ needs.changes.outputs.version }}-arm64.fpk](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.changes.outputs.tag }}/miproxy-${{ needs.changes.outputs.version }}-arm64.fpk) | ARM 处理器（如树莓派） |
+
+            ---
+
+            ### 🔄 操作
+
+            请审核变更内容，确认无误后点击 **Publish release** 发布。
+
+            ---
+            *由 GitHub Actions 自动创建*
+          files: |
+            *.fpk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## ✅ 构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**版本**: ${{ needs.changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 架构 | 文件 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| x86_64 | miproxy-${{ needs.changes.outputs.version }}-x86_64.fpk |" >> $GITHUB_STEP_SUMMARY
+          echo "| ARM64 | miproxy-${{ needs.changes.outputs.version }}-arm64.fpk |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**草稿 Release**: ${{ steps.create_release.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "请审核后手动点击 **Publish release** 发布。" >> $GITHUB_STEP_SUMMARY

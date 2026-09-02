@@ -1,36 +1,30 @@
 #!/bin/bash
 
-# MiProxy 安装后回调脚本（简化版）
-# 由于安装流程已整合到 web UI 中，此脚本仅负责：
-# 1. 安装程序文件（二进制、UI、GEO 数据等）
-# 2. 恢复保留的数据（如果有）
-# 3. 清理旧进程
+# MiProxy 安装后回调（v13 静默安装版）
+# 功能：仅安装程序文件，不启动服务
+# 启动由 Web UI 在首次访问时触发
 
-LOG_FILE="${TRIM_PKGVAR}/info.log"
 DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
-
 exec 2>>"${DEBUG_LOG}"
-echo "===== install_callback 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 
-log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${DEBUG_LOG}"
-}
+echo "===== install_callback v13 开始: $(date '+%Y-%m-%d %H:%M:%S') ====="
 
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
-PKGETC="${TRIM_PKGETC}"
 TARGET_DIR="${VAR_DIR}/target"
 UI_TARGET="${VAR_DIR}/ui"
+PKGETC="${TRIM_PKGETC}"
 BACKUP_DIR="/tmp/miproxy_backup"
 
-log_msg "install_callback v12 启动"
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${DEBUG_LOG}" > /dev/null
+}
 
-# 确保目录存在
-mkdir -p "${VAR_DIR}" "${PKGETC}" "${TARGET_DIR}" "${UI_TARGET}" "${VAR_DIR}/proxy_providers"
+log_msg "开始安装..."
 
-# ============ 1. 安装程序文件 ============
-log_msg "安装程序文件..."
+# 创建目录
+mkdir -p "${TARGET_DIR}" "${UI_TARGET}" "${PKGETC}" "${VAR_DIR}/proxy_providers"
+log_msg "目录已创建"
 
 # 复制 mihomo 核心
 if [ -f "${APP_DEST}/server/mihomo" ]; then
@@ -42,58 +36,37 @@ fi
 # 复制 UI 文件
 [ -d "${APP_DEST}/ui/zashboard" ] && mkdir -p "${UI_TARGET}/zashboard" && cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null
 [ -d "${APP_DEST}/ui/metacubexd" ] && mkdir -p "${UI_TARGET}/metacubexd" && cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null
-[ -f "${APP_DEST}/ui/config" ] && cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config" && chmod 666 "${UI_TARGET}/config" 2>/dev/null
+[ -f "${APP_DEST}/ui/config" ] && cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
 [ -f "${APP_DEST}/ui/index.html" ] && cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html"
 [ -d "${APP_DEST}/ui/images" ] && mkdir -p "${UI_TARGET}/images" && cp -rf "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null
+chmod 666 "${UI_TARGET}/config" 2>/dev/null
 log_msg "UI 文件已安装"
 
 # 复制 GEO 数据
-[ -d "${APP_DEST}/data" ] && for f in geoip.dat geosite.dat Country.mmdb; do
-    [ -f "${APP_DEST}/data/${f}" ] && cp -f "${APP_DEST}/data/${f}" "${VAR_DIR}/${f}" && chmod 666 "${VAR_DIR}/${f}" 2>/dev/null
-done
-log_msg "GEO 数据已安装"
+if [ -d "${APP_DEST}/data" ]; then
+    for f in geoip.dat geosite.dat Country.mmdb Country-ip6.mmdb; do
+        [ -f "${APP_DEST}/data/${f}" ] && cp -f "${APP_DEST}/data/${f}" "${VAR_DIR}/${f}" && chmod 666 "${VAR_DIR}/${f}" 2>/dev/null
+    done
+    log_msg "GEO 数据已安装"
+fi
 
-# ============ 2. 恢复保留的数据（如果有） ============
-if [ -d "${BACKUP_DIR}" ] && [ -f "${BACKUP_DIR}/.preserved" ]; then
-    log_msg "检测到保留数据，正在恢复..."
+# 检查是否有备份数据需要恢复
+if [ -f "${BACKUP_DIR}/.preserved" ]; then
+    log_msg "检测到备份数据，自动恢复..."
     
     # 恢复配置文件
-    [ -f "${BACKUP_DIR}/config.yaml" ] && cp -f "${BACKUP_DIR}/config.yaml" "${VAR_DIR}/config.yaml" && chmod 666 "${VAR_DIR}/config.yaml"
-    [ -f "${BACKUP_DIR}/settings.conf" ] && cp -f "${BACKUP_DIR}/settings.conf" "${PKGETC}/settings.conf" && chmod 666 "${PKGETC}/settings.conf" 2>/dev/null
+    [ -f "${BACKUP_DIR}/config.yaml" ] && cp -f "${BACKUP_DIR}/config.yaml" "${VAR_DIR}/config.yaml"
+    [ -f "${BACKUP_DIR}/settings.conf" ] && cp -f "${BACKUP_DIR}/settings.conf" "${PKGETC}/settings.conf"
     
     # 恢复订阅缓存
     [ -d "${BACKUP_DIR}/proxy_providers" ] && cp -rf "${BACKUP_DIR}/proxy_providers/"* "${VAR_DIR}/proxy_providers/" 2>/dev/null
     
-    # 恢复 UI 自定义配置
-    [ -d "${BACKUP_DIR}/ui" ] && cp -rf "${BACKUP_DIR}/ui/"* "${UI_TARGET}/" 2>/dev/null
-    
     # 清理备份标记
     rm -f "${BACKUP_DIR}/.preserved"
     
-    log_msg "保留数据已恢复"
+    chmod 666 "${VAR_DIR}/config.yaml" "${PKGETC}/settings.conf" 2>/dev/null
+    log_msg "备份数据已恢复"
 fi
 
-# ============ 3. 清理旧进程 ============
-pkill -x mihomo 2>/dev/null || true
-sleep 1
-
-# ============ 4. 启动服务（如有配置） ============
-CONFIG_FILE="${VAR_DIR}/config.yaml"
-if [ -f "${CONFIG_FILE}" ] && [ -x "${TARGET_DIR}/mihomo" ]; then
-    log_msg "启动 miproxy..."
-    nohup "${TARGET_DIR}/mihomo" -d "${VAR_DIR}" -f "${CONFIG_FILE}" >> "${LOG_FILE}" 2>&1 &
-    local pid=$!
-    echo "${pid}" > "${VAR_DIR}/app.pid"
-    sleep 2
-    
-    if kill -0 "${pid}" 2>/dev/null; then
-        log_msg "miproxy 启动成功 (PID: ${pid})"
-    else
-        log_msg "警告：miproxy 启动失败，请检查日志"
-    fi
-else
-    log_msg "配置文件不存在，跳过启动（将在 web UI 中完成首次配置）"
-fi
-
-log_msg "===== install_callback 完成 ====="
+log_msg "===== install_callback v13 完成 ====="
 exit 0

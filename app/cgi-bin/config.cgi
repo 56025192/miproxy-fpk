@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# MiProxy 配置保存 CGI
-# 接收 JSON 格式的配置并保存
+# MiProxy 配置管理 CGI
+# 支持：save（保存配置）、start（启动服务）、restore（恢复备份）
 
 echo "Content-Type: application/json"
 echo ""
@@ -13,250 +13,235 @@ PKGETC="${TRIM_PKGETC:-/var/apps/miproxy/etc}"
 TARGET_DIR="${VAR_DIR}/target"
 UI_TARGET="${VAR_DIR}/ui"
 BACKUP_DIR="/tmp/miproxy_backup"
+CONFIG_FILE="${VAR_DIR}/config.yaml"
+LOG_FILE="${VAR_DIR}/info.log"
+SCRIPT_DIR="${APP_DIR}/cmd"
 
-# 确保目录存在
-mkdir -p "${VAR_DIR}" "${PKGETC}" "${TARGET_DIR}" "${UI_TARGET}" "${VAR_DIR}/proxy_providers"
+# 创建日志函数
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - webui: $1" >> "${LOG_FILE}" 2>/dev/null
+}
 
 # 读取 POST 数据
-REQUEST_METHOD="${REQUEST_METHOD:-POST}"
-if [ "${REQUEST_METHOD}" = "POST" ]; then
-    CONTENT_LENGTH="${CONTENT_LENGTH:-0}"
-    if [ "${CONTENT_LENGTH}" -gt 0 ]; then
-        POST_DATA=$(cat)
-    else
-        POST_DATA=""
-    fi
+CONTENT_LENGTH=$(echo "$CONTENT_LENGTH" | tr -d ' ')
+if [ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ]; then
+    POST_DATA=$(cat | head -c 10240)
 else
     POST_DATA=""
 fi
 
-# 解析 JSON（简单方式）
+# 解析 JSON
 parse_json() {
-    echo "$POST_DATA" | python3 - "$1" 2>/dev/null << 'PYEOF'
+    local key="$1"
+    echo "$POST_DATA" | python3 -c "
 import sys, json
-try:
-    data = json.loads(sys.stdin.read())
-    key = sys.argv[1]
-    print(data.get(key, ''))
-except:
-    print('')
-PYEOF
+data = json.load(sys.stdin)
+print(data.get('$key', ''))
+" 2>/dev/null
 }
 
-# 提取配置值
-HTTP_PORT=$(parse_json "wizard_http_port")
-API_PORT=$(parse_json "wizard_api_port")
-SUB_TYPE=$(parse_json "wizard_sub_type")
-SUB_URL=$(parse_json "wizard_sub_url")
-SUB_PATH=$(parse_json "wizard_sub_path")
-SECRET=$(parse_json "wizard_secret")
-PROXY_USER=$(parse_json "wizard_proxy_user")
-PROXY_PASS=$(parse_json "wizard_proxy_pass")
-REFRESH_INTERVAL=$(parse_json "wizard_refresh_interval")
+# 获取查询参数
+ACTION="${QUERY_STRING%%&*}"
+ACTION="${ACTION#*=}"
+[ -z "$ACTION" ] && ACTION="${REQUEST_METHOD:-GET}"
 
-# 设置默认值
-HTTP_PORT=${HTTP_PORT:-7890}
-API_PORT=${API_PORT:-9090}
-SUB_TYPE=${SUB_TYPE:-none}
-REFRESH_INTERVAL=${REFRESH_INTERVAL:-0}
+log_msg "收到请求: action=$ACTION"
 
-# 订阅域名前缀过滤
-SUB_DOMAIN_FILTER=""
-if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
-    [ -n "${domain}" ] && SUB_DOMAIN_FILTER="\n    - \"${domain}\"\n    - \"*.${domain}\""
-fi
-
-# 复制二进制文件
-if [ -f "${APP_DIR}/server/mihomo" ]; then
-    cp -f "${APP_DIR}/server/mihomo" "${TARGET_DIR}/mihomo"
-    chmod +x "${TARGET_DIR}/mihomo"
-fi
-
-# 复制 UI 文件
-if [ -d "${APP_DIR}/ui/zashboard" ]; then
-    mkdir -p "${UI_TARGET}/zashboard"
-    cp -rf "${APP_DIR}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null
-fi
-if [ -d "${APP_DIR}/ui/metacubexd" ]; then
-    mkdir -p "${UI_TARGET}/metacubexd"
-    cp -rf "${APP_DIR}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null
-fi
-cp -f "${APP_DIR}/ui/index.html" "${UI_TARGET}/index.html" 2>/dev/null
-cp -f "${APP_DIR}/ui/config" "${UI_TARGET}/config" 2>/dev/null
-if [ -d "${APP_DIR}/ui/images" ]; then
-    mkdir -p "${UI_TARGET}/images"
-    cp -rf "${APP_DIR}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null
-fi
-chmod 666 "${UI_TARGET}/config" 2>/dev/null
-
-# 复制 GEO 数据
-if [ -d "${APP_DIR}/data" ]; then
-    for f in geoip.dat geosite.dat Country.mmdb; do
-        [ -f "${APP_DIR}/data/${f}" ] && cp -f "${APP_DIR}/data/${f}" "${VAR_DIR}/${f}"
-    done
-fi
-
-# 处理订阅
-SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
-if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>/dev/null && mv "${SUB_CACHE_PATH}.tmp" "${SUB_CACHE_PATH}"
-elif [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
-    cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
-fi
-
-# 提取订阅中的配置块
-extract_yaml_block() {
-    python3 - "$1" "${SUB_CACHE_PATH}" 2>/dev/null << 'PYEOF'
-import sys
-key = sys.argv[1] + ":"
-try:
-    with open(sys.argv[2], 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-except:
-    sys.exit(0)
-result = []
-found = False
-for line in lines:
-    stripped = line.rstrip('\n')
-    if not stripped.strip():
-        if found: result.append(line)
-        continue
-    is_top = not stripped[0].isspace()
-    if is_top:
-        if stripped.startswith(key):
-            found = True
-            result.append(line)
-        elif found:
-            if stripped.startswith('-'):
-                result.append(line)
-            else:
-                break
-    elif found:
-        result.append(line)
-sys.stdout.write(''.join(result))
-PYEOF
-}
-
-# 读取订阅配置
-SUB_PROXIES=""
-SUB_HOSTS=""
-SUB_PG=""
-SUB_RULES=""
-SUB_DNS=""
-SUB_BYPASS=""
-SUB_PROXY_PROVIDERS=""
-SUB_RULE_PROVIDERS=""
-
-if [ -f "${SUB_CACHE_PATH}" ]; then
-    SUB_PROXIES=$(extract_yaml_block "proxies")
-    SUB_HOSTS=$(extract_yaml_block "hosts")
-    SUB_PG=$(extract_yaml_block "proxy-groups")
-    SUB_RULES=$(extract_yaml_block "rules")
-    SUB_DNS=$(extract_yaml_block "dns")
-    SUB_BYPASS=$(extract_yaml_block "bypass")
-    SUB_PROXY_PROVIDERS=$(extract_yaml_block "proxy-providers")
-    SUB_RULE_PROVIDERS=$(extract_yaml_block "rule-providers")
-fi
-
-# 生成 config.yaml
-CONFIG_FILE="${VAR_DIR}/config.yaml"
-{
-    echo "# MiProxy 主配置"
-    echo ""
-    echo "mixed-port: ${HTTP_PORT}"
-    echo "allow-lan: true"
-    echo "mode: rule"
-    echo "log-level: info"
-    echo "ipv6: false"
-    echo "external-controller: 0.0.0.0:${API_PORT}"
-    echo "external-ui: ${UI_TARGET}"
-    echo "external-ui-name: zashboard"
-    [ -n "${SECRET}" ] && echo "secret: \"${SECRET}\""
-    [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ] && echo "authentication:" && echo "  - \"${PROXY_USER}:${PROXY_PASS}\""
-    echo "external-controller-cors:"
-    echo "  allow-private-network: true"
-    echo "  allow-origins: [\"*\"]"
-    echo "geodata-mode: true"
-    echo "geodata-loader: memconservative"
-    echo "tun:"
-    echo "  enable: false"
-    echo "  stack: system"
-    echo "  auto-route: true"
-    echo "  auto-redirect: true"
-    echo "  auto-detect-interface: true"
-    echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
+# ==================== 恢复备份 ====================
+restore_backup() {
+    log_msg "开始恢复备份..."
     
-    [ -n "${SUB_PROXIES}" ] && echo "# 节点列表" && echo "${SUB_PROXIES}"
-    [ -n "${SUB_HOSTS}" ] && echo "# hosts" && echo "${SUB_HOSTS}"
+    mkdir -p "${VAR_DIR}" "${PKGETC}" "${TARGET_DIR}" "${UI_TARGET}" "${VAR_DIR}/proxy_providers"
     
-    if [ -n "${SUB_PG}" ]; then
-        echo "# 代理组"
-        echo "${SUB_PG}"
-    else
-        echo "proxy-groups:"
-        echo "  - name: PROXY; type: select; proxies: [DIRECT, REJECT]"
+    # 恢复配置文件
+    if [ -f "${BACKUP_DIR}/config.yaml" ]; then
+        cp -f "${BACKUP_DIR}/config.yaml" "${CONFIG_FILE}"
+        chmod 666 "${CONFIG_FILE}" 2>/dev/null
+        log_msg "配置文件已恢复"
     fi
     
-    if [ -n "${SUB_RULES}" ]; then
-        echo "# 路由规则"
-        echo "${SUB_RULES}"
-    else
-        echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
+    # 恢复设置
+    if [ -f "${BACKUP_DIR}/settings.conf" ]; then
+        cp -f "${BACKUP_DIR}/settings.conf" "${PKGETC}/settings.conf"
+        chmod 666 "${PKGETC}/settings.conf" 2>/dev/null
+        log_msg "设置已恢复"
     fi
     
-    if [ -n "${SUB_DNS}" ]; then
-        echo "# DNS"
-        echo "${SUB_DNS}"
-    else
-        echo "dns:"
-        echo "  enable: true; listen: 0.0.0.0:53"
-        echo "  enhanced-mode: fake-ip; fake-ip-range: 198.18.0.1/16"
-        echo "  fake-ip-filter: [\"+.lan\", \"+.local\"${SUB_DOMAIN_FILTER}]"
-        echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
+    # 恢复订阅缓存
+    if [ -d "${BACKUP_DIR}/proxy_providers" ]; then
+        cp -rf "${BACKUP_DIR}/proxy_providers/"* "${VAR_DIR}/proxy_providers/" 2>/dev/null
+        log_msg "订阅缓存已恢复"
     fi
     
-    [ -n "${SUB_BYPASS}" ] && echo "# bypass" && echo "${SUB_BYPASS}"
-    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers" && echo "${SUB_PROXY_PROVIDERS}"
-    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers" && echo "${SUB_RULE_PROVIDERS}"
-} > "${CONFIG_FILE}"
-
-chmod 666 "${CONFIG_FILE}"
-
-# 保存设置
-{
-    echo "wizard_http_port=${HTTP_PORT}"
-    echo "wizard_api_port=${API_PORT}"
-    echo "wizard_sub_type=${SUB_TYPE}"
-    echo "wizard_refresh_interval=${REFRESH_INTERVAL}"
-    [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
-    [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
-    [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
-    [ -n "${SUB_URL}" ] && echo "wizard_sub_url=${SUB_URL}"
-    [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
-} > "${PKGETC}/settings.conf"
-
-chmod 666 "${PKGETC}/settings.conf" 2>/dev/null
-
-# 清理备份标记（安装完成后）
-if [ -d "${BACKUP_DIR}" ]; then
+    # 恢复 UI 数据
+    if [ -d "${BACKUP_DIR}/ui" ]; then
+        cp -rf "${BACKUP_DIR}/ui/"* "${UI_TARGET}/" 2>/dev/null
+        log_msg "UI 数据已恢复"
+    fi
+    
+    # 安装程序文件
+    [ -f "${APP_DIR}/server/mihomo" ] && cp -f "${APP_DIR}/server/mihomo" "${TARGET_DIR}/mihomo" && chmod +x "${TARGET_DIR}/mihomo"
+    log_msg "程序文件已安装"
+    
+    # 清理备份标记
     rm -f "${BACKUP_DIR}/.preserved"
-fi
-
-# 启动 miproxy
-if [ -x "${TARGET_DIR}/mihomo" ]; then
-    # 停止旧进程
-    pkill -x mihomo 2>/dev/null || true
-    sleep 1
-    # 启动新进程
-    nohup "${TARGET_DIR}/mihomo" -d "${VAR_DIR}" -f "${CONFIG_FILE}" >> "${VAR_DIR}/info.log" 2>&1 &
-    echo $! > "${VAR_DIR}/app.pid"
-fi
-
-# 返回成功
-cat << EOF
-{
-    "success": true,
-    "message": "配置已保存"
+    
+    log_msg "备份恢复完成"
+    echo "{\"success\": true, \"message\": \"配置已恢复\"}"
 }
+
+# ==================== 保存配置 ====================
+save_config() {
+    local sub_type=$(parse_json "sub_type")
+    local sub_url=$(parse_json "sub_url")
+    local sub_path=$(parse_json "sub_path")
+    
+    sub_type="${sub_type:-none}"
+    
+    log_msg "保存配置: sub_type=$sub_type"
+    
+    mkdir -p "${VAR_DIR}" "${PKGETC}" "${TARGET_DIR}" "${UI_TARGET}" "${VAR_DIR}/proxy_providers"
+    
+    # 安装程序文件
+    [ -f "${APP_DIR}/server/mihomo" ] && cp -f "${APP_DIR}/server/mihomo" "${TARGET_DIR}/mihomo" && chmod +x "${TARGET_DIR}/mihomo"
+    
+    # 复制 UI
+    [ -d "${APP_DIR}/ui/zashboard" ] && mkdir -p "${UI_TARGET}/zashboard" && cp -rf "${APP_DIR}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null
+    [ -d "${APP_DIR}/ui/metacubexd" ] && mkdir -p "${UI_TARGET}/metacubexd" && cp -rf "${APP_DIR}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null
+    [ -f "${APP_DIR}/ui/config" ] && cp -f "${APP_DIR}/ui/config" "${UI_TARGET}/config"
+    [ -f "${APP_DIR}/ui/index.html" ] && cp -f "${APP_DIR}/ui/index.html" "${UI_TARGET}/index.html"
+    [ -d "${APP_DIR}/ui/images" ] && mkdir -p "${UI_TARGET}/images" && cp -rf "${APP_DIR}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null
+    chmod 666 "${UI_TARGET}/config" 2>/dev/null
+    
+    # 复制 GEO 数据
+    [ -d "${APP_DIR}/data" ] && for f in geoip.dat geosite.dat Country.mmdb; do
+        [ -f "${APP_DIR}/data/${f}" ] && cp -f "${APP_DIR}/data/${f}" "${VAR_DIR}/${f}" && chmod 666 "${VAR_DIR}/${f}" 2>/dev/null
+    done
+    
+    # 处理订阅
+    local sub_cache="${VAR_DIR}/proxy_providers/subscription.yaml"
+    
+    if [ "$sub_type" = "remote" ] && [ -n "$sub_url" ]; then
+        log_msg "下载远程订阅: $sub_url"
+        if curl -fsSL --connect-timeout 15 --max-time 60 "$sub_url" -o "${sub_cache}.tmp" 2>/dev/null; then
+            mv "${sub_cache}.tmp" "${sub_cache}"
+            log_msg "订阅下载成功"
+        else
+            log_msg "订阅下载失败，使用空配置"
+            rm -f "${sub_cache}.tmp"
+        fi
+    elif [ "$sub_type" = "local" ] && [ -n "$sub_path" ] && [ -f "$sub_path" ]; then
+        cp -f "$sub_path" "${sub_cache}"
+        log_msg "本地订阅已配置"
+    fi
+    
+    # 生成 config.yaml
+    generate_config
+    
+    # 保存设置
+    cat > "${PKGETC}/settings.conf" << EOF
+wizard_sub_type=${sub_type}
+wizard_sub_url=${sub_url}
+wizard_sub_path=${sub_path}
+wizard_http_port=7890
+wizard_api_port=9090
+wizard_tun_enable=false
 EOF
+    chmod 666 "${PKGETC}/settings.conf" 2>/dev/null
+    
+    log_msg "配置保存完成"
+    echo "{\"success\": true, \"message\": \"配置已保存\"}"
+}
+
+# 生成配置文件
+generate_config() {
+    local http_port=7890
+    local api_port=9090
+    local sub_cache="${VAR_DIR}/proxy_providers/subscription.yaml"
+    
+    {
+        echo "# MiProxy 主配置（由 Web UI 生成）"
+        echo ""
+        echo "mixed-port: ${http_port}"
+        echo "allow-lan: true"
+        echo "mode: rule"
+        echo "log-level: info"
+        echo "ipv6: false"
+        echo "external-controller: 0.0.0.0:${api_port}"
+        echo "external-ui: ${UI_TARGET}"
+        echo "external-ui-name: zashboard"
+        echo "external-controller-cors:"
+        echo "  allow-private-network: true"
+        echo "  allow-origins: [\"*\"]"
+        echo "geodata-mode: true"
+        echo "geodata-loader: memconservative"
+        echo "tun:"
+        echo "  enable: false"
+        echo "  stack: system"
+        echo "  auto-route: true"
+        echo "  auto-detect-interface: true"
+        echo "dns:"
+        echo "  enable: true"
+        echo "  listen: 0.0.0.0:53"
+        echo "  enhanced-mode: fake-ip"
+        echo "  fake-ip-range: 198.18.0.1/16"
+        echo "  fake-ip-filter: [\"+.lan\", \"+.local\"]"
+        echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
+        echo "proxy-groups:"
+        echo "  - name: PROXY"
+        echo "    type: select"
+        echo "    proxies: [DIRECT, REJECT]"
+        echo "rules:"
+        echo "  - GEOIP,CN,DIRECT"
+        echo "  - MATCH,PROXY"
+    } > "${CONFIG_FILE}"
+    
+    chmod 666 "${CONFIG_FILE}" 2>/dev/null
+    log_msg "配置文件已生成"
+}
+
+# ==================== 启动服务 ====================
+start_service() {
+    log_msg "启动服务..."
+    
+    # 检查配置文件
+    if [ ! -f "${CONFIG_FILE}" ]; then
+        log_msg "配置文件不存在，无法启动"
+        echo "{\"success\": false, \"message\": \"配置文件不存在\"}"
+        return 1
+    fi
+    
+    # 检查程序文件
+    if [ ! -x "${TARGET_DIR}/mihomo" ]; then
+        log_msg "程序文件不存在"
+        echo "{\"success\": false, \"message\": \"程序文件不存在\"}"
+        return 1
+    fi
+    
+    # 调用主脚本启动
+    if [ -x "${SCRIPT_DIR}/main" ]; then
+        bash "${SCRIPT_DIR}/main" start 2>&1 | head -5 >> "${LOG_FILE}"
+        log_msg "启动命令已执行"
+        echo "{\"success\": true, \"message\": \"服务启动中\"}"
+    else
+        log_msg "主脚本不存在"
+        echo "{\"success\": false, \"message\": \"主脚本不存在\"}"
+        return 1
+    fi
+}
+
+# ==================== 主逻辑 ====================
+case "$ACTION" in
+    restore)
+        restore_backup
+        ;;
+    save)
+        save_config
+        ;;
+    start)
+        start_service
+        ;;
+    *)
+        echo "{\"success\": false, \"message\": \"未知操作: $ACTION\"}"
+        ;;
+esac

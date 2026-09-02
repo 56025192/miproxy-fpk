@@ -10,17 +10,57 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             min-height: 100vh;
-            display: flex; align-items: center; justify-content: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             padding: 20px;
         }
-        .container { background: white; border-radius: 20px; padding: 40px; max-width: 600px; width: 100%; text-align: center; }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
         h1 { color: #1a1a2e; margin-bottom: 8px; font-size: 28px; }
         .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
         
-        /* 加载中 */
-        .loading { color: #666; padding: 40px; }
-        .loading::after { content: '...'; animation: dots 1.5s infinite; }
-        @keyframes dots { 0%,20% { content: '.'; } 40% { content: '..'; } 60%,100% { content: '...'; } }
+        /* 加载状态 */
+        .loading-box {
+            background: #f0f9ff;
+            border: 1px solid #0ea5e9;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0f2fe;
+            border-top-color: #0ea5e9;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { color: #0369a1; font-size: 14px; }
+        
+        /* 成功状态 */
+        .success-box {
+            background: #f0fdf4;
+            border: 1px solid #10b981;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } }
+        .success-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .success-text { color: #047857; font-size: 16px; font-weight: 500; }
         
         /* 面板选择 */
         .panels { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
@@ -39,276 +79,322 @@
         .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; margin-top: 12px; font-weight: 500; }
         .badge-recommend { background: #10b981; color: white; }
         .badge-lightweight { background: #f59e0b; color: white; }
-        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #999; font-size: 12px; }
         
-        /* 安装向导 */
-        .wizard { text-align: left; }
-        .wizard h2 { color: #1a1a2e; margin-bottom: 20px; text-align: center; }
-        .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; margin-bottom: 8px; color: #333; font-weight: 500; }
+        /* 配置表单 */
+        .config-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; color: #475569; font-size: 13px; margin-bottom: 5px; font-weight: 500; }
         .form-group input, .form-group select {
-            width: 100%; padding: 12px 16px; border: 2px solid #ddd;
-            border-radius: 10px; font-size: 14px; transition: border-color 0.3s;
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
         }
         .form-group input:focus, .form-group select:focus {
-            outline: none; border-color: #10b981;
+            outline: none;
+            border-color: #0ea5e9;
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
         }
-        .form-group .help { font-size: 12px; color: #666; margin-top: 4px; }
-        .form-row { display: flex; gap: 15px; }
-        .form-row .form-group { flex: 1; }
-        .btn-group { display: flex; gap: 10px; margin-top: 30px; }
+        .form-group .tips { color: #64748b; font-size: 12px; margin-top: 4px; }
+        
+        /* 按钮 */
         .btn {
-            flex: 1; padding: 14px 24px; border: none; border-radius: 10px;
-            font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s;
+            display: inline-block;
+            padding: 12px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
         }
-        .btn-primary { background: #10b981; color: white; }
-        .btn-primary:hover { background: #059669; }
-        .btn-secondary { background: #e5e7eb; color: #374151; }
-        .btn-secondary:hover { background: #d1d5db; }
+        .btn-primary {
+            background: #0ea5e9;
+            color: white;
+        }
+        .btn-primary:hover { background: #0284c7; transform: translateY(-1px); }
+        .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; transform: none; }
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #475569;
+            margin-left: 10px;
+        }
+        .btn-secondary:hover { background: #cbd5e1; }
         
-        /* 检测结果提示 */
-        .alert { padding: 15px 20px; border-radius: 10px; margin-bottom: 20px; text-align: left; }
-        .alert-info { background: #dbeafe; border: 1px solid #93c5fd; color: #1e40af; }
-        .alert-warning { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
-        .alert-success { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #999; font-size: 12px; }
         
-        .hidden { display: none; }
+        .hidden { display: none !important; }
         
-        /* 错误页面 */
-        .error-msg { color: #dc2626; padding: 20px; text-align: center; }
+        /* 错误提示 */
+        .error-box {
+            background: #fef2f2;
+            border: 1px solid #ef4444;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            color: #dc2626;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>MiProxy</h1>
-        <p class="subtitle" id="subtitle">正在检测配置状态...</p>
+        <p class="subtitle" id="pageSubtitle">正在检测配置状态...</p>
         
         <!-- 加载中 -->
-        <div id="loading-view" class="loading">检测配置状态</div>
+        <div id="loadingView" class="loading-box">
+            <div class="spinner"></div>
+            <p class="loading-text" id="loadingText">正在连接服务器...</p>
+        </div>
+        
+        <!-- 错误 -->
+        <div id="errorView" class="error-box hidden">
+            <p id="errorText">发生错误</p>
+        </div>
+        
+        <!-- 服务启动中 -->
+        <div id="startingView" class="loading-box hidden">
+            <div class="spinner"></div>
+            <p class="loading-text">正在启动服务，请稍候...</p>
+        </div>
+        
+        <!-- 配置向导 -->
+        <div id="configView" class="hidden">
+            <div class="config-box">
+                <div class="form-group">
+                    <label>订阅类型</label>
+                    <select id="subType" onchange="toggleSubUrl()">
+                        <option value="none">暂不配置</option>
+                        <option value="remote">远程订阅 URL</option>
+                        <option value="local">本地订阅文件</option>
+                    </select>
+                    <p class="tips">可跳过，后续在控制面板中配置</p>
+                </div>
+                <div id="subUrlGroup" class="form-group hidden">
+                    <label>订阅 URL</label>
+                    <input type="text" id="subUrl" placeholder="https://example.com/api/v1/client/subscribe?token=xxx">
+                </div>
+                <div id="subPathGroup" class="form-group hidden">
+                    <label>本地订阅文件</label>
+                    <input type="text" id="subPath" placeholder="/vol1/@appshare/miproxy/sub.yaml">
+                </div>
+            </div>
+            <button class="btn btn-primary" id="configBtn" onclick="saveConfig()">完成配置</button>
+        </div>
         
         <!-- 面板选择 -->
-        <div id="panels-view" class="hidden">
+        <div id="panelView" class="hidden">
+            <p class="subtitle">服务已就绪，请选择控制面板</p>
             <div class="panels">
                 <a href="/ui/zashboard/" class="panel-card zashboard">
                     <h2>Zashboard</h2>
-                    <p>现代化界面，功能丰富<br/>支持节点管理、规则配置</p>
+                    <p>现代化界面，功能丰富<br>支持节点管理、规则配置</p>
                     <span class="badge badge-recommend">推荐</span>
                 </a>
                 <a href="/ui/metacubexd/" class="panel-card metacubexd">
                     <h2>MetaCubeXD</h2>
-                    <p>经典 Clash 风格，轻量稳定<br/>简洁直观，易于操作</p>
+                    <p>经典 Clash 风格，轻量稳定<br>简洁直观，易于操作</p>
                     <span class="badge badge-lightweight">轻量</span>
                 </a>
             </div>
-            <div class="footer">
-                <p>MiProxy | mihomo 代理核心</p>
-            </div>
         </div>
         
-        <!-- 安装向导 -->
-        <div id="wizard-view" class="wizard hidden">
-            <!-- 欢迎提示 -->
-            <div id="welcome-tip" class="alert alert-info hidden">
-                <strong>👋 欢迎使用 MiProxy</strong><br/>
-                请配置代理服务的基本参数完成安装。
+        <!-- 备份恢复提示 -->
+        <div id="restoreView" class="hidden">
+            <div class="success-box">
+                <div class="success-icon">📦</div>
+                <p class="success-text">检测到保留数据，配置已自动恢复！</p>
             </div>
-            
-            <div id="restore-tip" class="alert alert-success hidden">
-                <strong>✅ 检测到保留数据</strong><br/>
-                系统已自动恢复之前的配置，您可以直接点击「完成安装」使用，或修改下方配置。
-            </div>
-            
-            <h2 id="wizard-title">配置代理服务</h2>
-            
-            <div class="form-group">
-                <label>订阅类型</label>
-                <select id="sub_type" onchange="toggleSubFields()">
-                    <option value="none">暂不配置（推荐）</option>
-                    <option value="remote">远程订阅 URL</option>
-                    <option value="local">本地订阅文件</option>
-                </select>
-                <p class="help">选择订阅来源，可后续在面板中修改</p>
-            </div>
-            
-            <div id="sub_url_field" class="form-group hidden">
-                <label>订阅 URL</label>
-                <input type="text" id="sub_url" placeholder="https://example.com/api/v1/client/subscribe?token=xxx">
-            </div>
-            
-            <div id="sub_path_field" class="form-group hidden">
-                <label>本地订阅文件</label>
-                <input type="text" id="sub_path" placeholder="/vol1/@appshare/miproxy/sub.yaml" value="/vol1/@appshare/miproxy/sub.yaml">
-            </div>
-            
-            <div class="form-row">
-                <div class="form-group">
-                    <label>HTTP 代理端口</label>
-                    <input type="number" id="http_port" value="7890" min="1" max="65535">
-                </div>
-                <div class="form-group">
-                    <label>API 控制端口</label>
-                    <input type="number" id="api_port" value="9090" min="1" max="65535">
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label>面板密钥</label>
-                <input type="password" id="secret" placeholder="留空则不启用（建议设置）">
-                <p class="help">用于访问控制面板的管理密钥</p>
-            </div>
-            
-            <div class="form-group">
-                <label>代理用户名（可选）</label>
-                <input type="text" id="proxy_user" placeholder="留空则不启用">
-            </div>
-            
-            <div class="form-group">
-                <label>代理密码（可选）</label>
-                <input type="password" id="proxy_pass" placeholder="留空则不启用">
-            </div>
-            
-            <div class="btn-group">
-                <button class="btn btn-secondary" onclick="skipWizard()">跳过</button>
-                <button class="btn btn-primary" onclick="submitWizard()">完成安装</button>
-            </div>
+            <button class="btn btn-primary" onclick="showPanelView()">打开控制面板</button>
         </div>
         
-        <!-- 安装中 -->
-        <div id="installing-view" class="hidden">
-            <div class="loading">正在保存配置...</div>
-        </div>
-        
-        <!-- 安装完成 -->
-        <div id="complete-view" class="hidden">
-            <div class="alert alert-success">
-                <strong>✅ 配置已保存！</strong><br/>
-                点击下方按钮打开控制面板。
-            </div>
-            <div class="btn-group">
-                <a href="/ui/zashboard/" class="btn btn-primary">打开 Zashboard</a>
-            </div>
-        </div>
-        
-        <!-- 错误 -->
-        <div id="error-view" class="hidden">
-            <div class="error-msg" id="error-message">发生错误</div>
+        <div class="footer">
+            <p id="versionText">MiProxy v2.7.1 | mihomo 代理核心</p>
         </div>
     </div>
 
     <script>
-        // 检测配置状态
-        async function checkConfigStatus() {
+        // 状态检测
+        async function checkStatus() {
             try {
-                // 调用 API 检测配置状态
-                const resp = await fetch('/cgi/miproxy/status.cgi');
+                const resp = await fetch('/cgi-bin/status.cgi');
+                if (!resp.ok) throw new Error('服务器连接失败');
                 const data = await resp.json();
-                
-                if (data.configured) {
-                    // 已配置，显示面板选择
-                    showPanels();
-                } else {
-                    // 未配置，显示安装向导
-                    if (data.has_backup) {
-                        showRestoreTip();
-                    } else {
-                        showWelcomeTip();
-                    }
-                    showWizard();
-                }
+                return data;
             } catch (e) {
-                // API 调用失败，尝试显示面板（兼容旧版本）
-                console.log('Status API error:', e);
-                showPanels();
+                console.error('状态检测失败:', e);
+                return null;
             }
         }
         
-        function showPanels() {
-            document.getElementById('subtitle').textContent = '请选择要打开的控制面板';
-            document.getElementById('loading-view').classList.add('hidden');
-            document.getElementById('panels-view').classList.remove('hidden');
-            document.getElementById('wizard-view').classList.add('hidden');
+        // 检测服务状态
+        async function checkServiceStatus() {
+            try {
+                const resp = await fetch('/cgi-bin/status.cgi?check=service');
+                if (!resp.ok) return false;
+                const data = await resp.json();
+                return data.running === true;
+            } catch {
+                return false;
+            }
         }
         
-        function showWizard() {
-            document.getElementById('subtitle').textContent = '首次使用请先配置';
-            document.getElementById('loading-view').classList.add('hidden');
-            document.getElementById('wizard-view').classList.remove('hidden');
-            document.getElementById('panels-view').classList.add('hidden');
+        // 启动服务
+        async function startService() {
+            try {
+                const resp = await fetch('/cgi-bin/config.cgi?action=start', {
+                    method: 'POST'
+                });
+                return resp.ok;
+            } catch {
+                return false;
+            }
         }
         
-        function showWelcomeTip() {
-            document.getElementById('welcome-tip').classList.remove('hidden');
-            document.getElementById('restore-tip').classList.add('hidden');
-            document.getElementById('wizard-title').textContent = '配置代理服务';
-        }
-        
-        function showRestoreTip() {
-            document.getElementById('welcome-tip').classList.add('hidden');
-            document.getElementById('restore-tip').classList.remove('hidden');
-            document.getElementById('wizard-title').textContent = '确认配置';
-        }
-        
-        function toggleSubFields() {
-            const subType = document.getElementById('sub_type').value;
-            document.getElementById('sub_url_field').classList.toggle('hidden', subType !== 'remote');
-            document.getElementById('sub_path_field').classList.toggle('hidden', subType !== 'local');
-        }
-        
-        function skipWizard() {
-            // 跳过向导，使用默认值
-            submitWizard({
-                wizard_http_port: 7890,
-                wizard_api_port: 9090,
-                wizard_sub_type: 'none',
-                wizard_secret: '',
-                wizard_proxy_user: '',
-                wizard_proxy_pass: '',
-                wizard_tun_enable: 'false',
-                wizard_refresh_interval: 0
-            });
-        }
-        
-        async function submitWizard(overrides = {}) {
-            document.getElementById('wizard-view').classList.add('hidden');
-            document.getElementById('installing-view').classList.remove('hidden');
+        // 主流程
+        async function init() {
+            const loadingView = document.getElementById('loadingView');
+            const loadingText = document.getElementById('loadingText');
+            const errorView = document.getElementById('errorView');
+            const configView = document.getElementById('configView');
+            const panelView = document.getElementById('panelView');
+            const restoreView = document.getElementById('restoreView');
+            const subtitle = document.getElementById('pageSubtitle');
             
-            const config = {
-                wizard_http_port: document.getElementById('http_port').value || 7890,
-                wizard_api_port: document.getElementById('api_port').value || 9090,
-                wizard_sub_type: document.getElementById('sub_type').value || 'none',
-                wizard_sub_url: document.getElementById('sub_url').value || '',
-                wizard_sub_path: document.getElementById('sub_path').value || '',
-                wizard_secret: document.getElementById('secret').value || '',
-                wizard_proxy_user: document.getElementById('proxy_user').value || '',
-                wizard_proxy_pass: document.getElementById('proxy_pass').value || '',
-                wizard_tun_enable: 'false',
-                wizard_refresh_interval: 0,
-                ...overrides
-            };
+            loadingText.textContent = '正在检测配置状态...';
+            
+            const status = await checkStatus();
+            
+            if (!status) {
+                // 无法连接服务器
+                loadingView.classList.add('hidden');
+                errorView.classList.remove('hidden');
+                document.getElementById('errorText').textContent = '无法连接服务器，请确保应用已正确安装';
+                return;
+            }
+            
+            if (status.has_backup && !status.configured) {
+                // 有备份但未恢复 - 自动恢复
+                loadingText.textContent = '正在恢复配置...';
+                const resp = await fetch('/cgi-bin/config.cgi?action=restore', {
+                    method: 'POST'
+                });
+                if (resp.ok) {
+                    loadingView.classList.add('hidden');
+                    restoreView.classList.remove('hidden');
+                    subtitle.textContent = '数据恢复成功';
+                    return;
+                }
+            }
+            
+            if (!status.configured) {
+                // 未配置 - 显示配置向导
+                loadingView.classList.add('hidden');
+                configView.classList.remove('hidden');
+                subtitle.textContent = '首次配置';
+                return;
+            }
+            
+            // 已配置 - 检查服务状态
+            loadingText.textContent = '正在检查服务状态...';
+            const serviceRunning = await checkServiceStatus();
+            
+            if (!serviceRunning) {
+                // 服务未启动 - 启动服务
+                loadingView.classList.remove('hidden');
+                document.getElementById('startingView').classList.remove('hidden');
+                
+                const started = await startService();
+                if (started) {
+                    // 等待服务启动
+                    let retries = 10;
+                    while (retries > 0) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        const running = await checkServiceStatus();
+                        if (running) break;
+                        retries--;
+                    }
+                }
+            }
+            
+            // 显示面板选择
+            loadingView.classList.add('hidden');
+            panelView.classList.remove('hidden');
+            subtitle.textContent = '服务已就绪';
+        }
+        
+        // 保存配置
+        async function saveConfig() {
+            const btn = document.getElementById('configBtn');
+            const subType = document.getElementById('subType').value;
+            const subUrl = document.getElementById('subUrl').value;
+            const subPath = document.getElementById('subPath').value;
+            
+            btn.disabled = true;
+            btn.textContent = '保存中...';
             
             try {
-                const resp = await fetch('/cgi/miproxy/config.cgi', {
+                const resp = await fetch('/cgi-bin/config.cgi?action=save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(config)
+                    body: JSON.stringify({
+                        sub_type: subType,
+                        sub_url: subUrl,
+                        sub_path: subPath
+                    })
                 });
                 
-                if (resp.ok) {
-                    document.getElementById('installing-view').classList.add('hidden');
-                    document.getElementById('complete-view').classList.remove('hidden');
-                    document.getElementById('subtitle').textContent = '安装完成';
-                } else {
-                    throw new Error('配置保存失败');
+                if (!resp.ok) throw new Error('保存失败');
+                
+                // 启动服务
+                btn.textContent = '正在启动服务...';
+                await startService();
+                
+                // 等待服务启动
+                let retries = 15;
+                while (retries > 0) {
+                    await new Promise(r => setTimeout(r, 1000));
+                    const running = await checkServiceStatus();
+                    if (running) break;
+                    retries--;
                 }
+                
+                // 显示成功
+                document.getElementById('configView').classList.add('hidden');
+                document.getElementById('panelView').classList.remove('hidden');
+                document.getElementById('pageSubtitle').textContent = '配置完成，服务已启动';
+                
             } catch (e) {
-                document.getElementById('installing-view').classList.add('hidden');
-                document.getElementById('error-view').classList.remove('hidden');
-                document.getElementById('error-message').textContent = '配置保存失败: ' + e.message;
+                alert('配置保存失败: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = '完成配置';
             }
         }
         
-        // 页面加载时检测配置状态
-        checkConfigStatus();
+        // 显示面板选择
+        function showPanelView() {
+            document.getElementById('restoreView').classList.add('hidden');
+            document.getElementById('panelView').classList.remove('hidden');
+        }
+        
+        // 切换订阅类型显示
+        function toggleSubUrl() {
+            const subType = document.getElementById('subType').value;
+            document.getElementById('subUrlGroup').classList.toggle('hidden', subType !== 'remote');
+            document.getElementById('subPathGroup').classList.toggle('hidden', subType !== 'local');
+        }
+        
+        // 页面加载时自动检测
+        window.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>

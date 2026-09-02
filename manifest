@@ -1,8 +1,8 @@
 # MiProxy FPK Application Manifest
 appname               = miproxy
-version               = 2.6.20
+version               = 2.7.0
 display_name          = MiProxy
-desc                  = MiProxy v2.6.20 - 基于 mihomo 代理核心的飞牛 NAS 应用，支持卸载后重装的快速安装模式（持久化备份），仅支持 Clash 格式订阅
+desc                  = MiProxy v2.7.0 - 基于 mihomo 代理核心的飞牛 NAS 应用，安装流程已整合到 web UI 中，仅支持 Clash 格式订阅
 platform              = all
 source                = thirdparty
 os_min_version        = 1.1.0
@@ -16,4 +16,4 @@ startup               = true
 service_port          = 9090
 desktop_uidir         = ui
 desktop_applaunchname = miproxy.dashboard
-changelog           = v2.6.20: 修复保留数据无法在重装时恢复 | v2.6.19: 修复快速安装无效问题 | v2.6.18: 修复快速安装仍需完整流程
+changelog           = v2.7.0: 安装流程整合到 web UI | v2.6.20: 修复保留数据无法恢复 | v2.6.19: 修复快速安装无效

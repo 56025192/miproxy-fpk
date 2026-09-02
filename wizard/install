@@ -9,32 +9,6 @@
     ]
   },
   {
-    "stepTitle": "安装模式",
-    "items": [
-      {
-        "type": "tips",
-        "helpText": "检测到您之前卸载时保留了应用数据。选择安装模式："
-      },
-      {
-        "type": "radio",
-        "field": "wizard_install_mode",
-        "label": "安装模式",
-        "defaultValue": "quick",
-        "options": [
-          {
-            "value": "quick",
-            "label": "🚀 快速安装（推荐）— 保留原有配置，一键完成安装"
-          },
-          {
-            "value": "custom",
-            "label": "⚙️ 自定义安装 — 重新配置所有选项"
-          }
-        ],
-        "rules": [{"required": true, "message": "请选择安装模式"}]
-      }
-    ]
-  },
-  {
     "stepTitle": "代理设置",
     "items": [
       {
@@ -47,8 +21,7 @@
         "label": "代理用户名",
         "initValue": "",
         "placeholder": "留空则不启用",
-        "rules": [],
-        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
+        "rules": []
       },
       {
         "type": "text",
@@ -56,8 +29,7 @@
         "label": "代理密码",
         "initValue": "",
         "placeholder": "留空则不启用",
-        "rules": [],
-        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
+        "rules": []
       },
       {
         "type": "text",
@@ -65,8 +37,32 @@
         "label": "面板密钥",
         "initValue": "",
         "placeholder": "留空则不启用（建议设置）",
-        "rules": [],
-        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
+        "rules": []
+      }
+    ]
+  },
+  {
+    "stepTitle": "端口设置",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "配置代理服务的监听端口。默认 HTTP 代理端口 7890，API 端口 9090。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_http_port",
+        "label": "HTTP 代理端口",
+        "initValue": "7890",
+        "placeholder": "7890",
+        "rules": [{"required": true, "message": "请输入端口号"}]
+      },
+      {
+        "type": "text",
+        "field": "wizard_api_port",
+        "label": "API 控制端口",
+        "initValue": "9090",
+        "placeholder": "9090",
+        "rules": [{"required": true, "message": "请输入端口号"}]
       }
     ]
   },
@@ -75,7 +71,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "TUN 功能可将系统所有流量通过代理转发（全局代理）。<br><br>⚠️ 注意：<br>• TUN 需要 mihomo 以特殊方式运行，fnOS 手动安装的 mihomo 可能无法启用此功能<br>• 如果启用后服务异常，请关闭 TUN 重试<br>• 普通代理模式（无需 TUN）已能满足大多数使用场景"
+        "helpText": "TUN 功能可将系统所有流量通过代理转发（全局代理）。<br><br>⚠️ 注意：<br>• TUN 需要 mihomo 以特殊方式运行<br>• 如果启用后服务异常，请关闭 TUN 重试<br>• 普通代理模式（无需 TUN）已能满足大多数使用场景"
       },
       {
         "type": "radio",
@@ -86,8 +82,7 @@
           {"value": "false", "label": "关闭（推荐）"},
           {"value": "true", "label": "启用（需要内核支持）"}
         ],
-        "rules": [{"required": true, "message": "请选择 TUN 状态"}],
-        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
+        "rules": [{"required": true, "message": "请选择 TUN 状态"}]
       }
     ]
   },
@@ -108,8 +103,7 @@
           {"value": "remote", "label": "远程订阅 URL"},
           {"value": "local", "label": "本地订阅文件"}
         ],
-        "rules": [{"required": true, "message": "请选择订阅类型"}],
-        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
+        "rules": [{"required": true, "message": "请选择订阅类型"}]
       },
       {
         "type": "text",
@@ -141,8 +135,7 @@
           {"value": "12", "label": "每 12 小时"},
           {"value": "24", "label": "每 24 小时"}
         ],
-        "rules": [{"required": true, "message": "请选择刷新间隔"}],
-        "visibleIf": {"field": "wizard_install_mode", "value": "custom"}
+        "rules": [{"required": true, "message": "请选择刷新间隔"}]
       }
     ]
   }

@@ -1,123 +1,128 @@
 #!/bin/bash
 
-# MiProxy 安装前初始化脚本（v2 重装感知版）
-# 职责：检测重装场景，恢复保存的配置到 wizard 变量
+# MiProxy 安装前回调脚本（v2）
+# 功能：
+# 1. 检测是否为重装场景（上次卸载是否保留了数据）
+# 2. 如果是重装场景，动态生成简化向导（只有确认步骤）
+# 3. 如果是首次安装，使用默认向导（完整配置）
 
 LOG_FILE="/tmp/miproxy_install_init.log"
 exec >>"${LOG_FILE}" 2>&1
 
-echo ""
-echo "=========================================="
-echo "$(date '+%Y-%m-%d %H:%M:%S') install_init: 检测重装场景"
-echo "=========================================="
+echo "===== install_init v2 开始: $(date '+%Y-%m-%d %H:%M:%S') ====="
 
-# fnOS 的数据目录（卸载时保留的数据位置）
-VAR_DIR="${TRIM_PKGVAR}"
-PRESERVED_FILE="${VAR_DIR}/.preserved"
-SETTINGS_FILE="${TRIM_PKGETC}/settings.conf"
+# 定义向导文件路径
+WIZARD_FILE="${TRIM_APPDEST}/wizard/install"
+APP_DIR="${TRIM_APPDEST}"
 
-# 检测是否为重装场景（保留数据）
-detect_reinstall() {
-    echo "检测重装场景..."
+# 检测是否为重装场景
+check_reinstall() {
+    local preserved_file="${TRIM_PKGVAR}/.preserved"
+    local quick_config="${TRIM_PKGVAR}/.quick_config"
     
-    # 检查是否有保留标记
-    if [ -f "${PRESERVED_FILE}" ]; then
-        echo "✅ 检测到 .preserved 标记：这是重装场景"
-        echo "PRESERVED=true" >> "${TRIM_PKGVAR}/.install_env"
-        return 0
-    fi
-    
-    # 检查是否有配置文件（也可能是重装场景）
-    if [ -f "${SETTINGS_FILE}" ]; then
-        echo "✅ 检测到 settings.conf：可能是重装场景"
-        echo "PRESERVED=true" >> "${TRIM_PKGVAR}/.install_env"
-        return 0
-    fi
-    
-    # 检查是否有 config.yaml
-    if [ -f "${VAR_DIR}/config.yaml" ]; then
-        echo "✅ 检测到 config.yaml：这是重装场景"
-        echo "PRESERVED=true" >> "${TRIM_PKGVAR}/.install_env"
-        return 0
-    fi
-    
-    echo "❌ 未检测到保留数据：这是首次安装或未保留数据的安装"
-    echo "PRESERVED=false" >> "${TRIM_PKGVAR}/.install_env"
-    return 1
-}
-
-# 恢复保存的配置到 wizard 变量
-restore_settings() {
-    echo "恢复保存的配置..."
-    
-    if [ ! -f "${SETTINGS_FILE}" ]; then
-        echo "⚠️ settings.conf 不存在，无法恢复配置"
-        return 1
-    fi
-    
-    # 读取并恢复各项配置
-    while IFS='=' read -r key value; do
-        # 跳过注释和空行
-        [[ "$key" =~ ^# ]] && continue
-        [[ -z "$key" ]] && continue
+    if [ -f "${preserved_file}" ]; then
+        echo "检测到重装场景：上次卸载时保留了数据"
         
-        # 设置 wizard 变量
-        case "$key" in
-            wizard_proxy_user)
-                wizard_proxy_user="$value"
-                echo "已恢复：代理用户 = $value"
-                ;;
-            wizard_proxy_pass)
-                wizard_proxy_pass="$value"
-                echo "已恢复：代理密码 = *****"
-                ;;
-            wizard_secret)
-                wizard_secret="$value"
-                echo "已恢复：面板密钥 = $value"
-                ;;
-            wizard_http_port)
-                wizard_http_port="$value"
-                echo "已恢复：HTTP端口 = $value"
-                ;;
-            wizard_api_port)
-                wizard_api_port="$value"
-                echo "已恢复：API端口 = $value"
-                ;;
-            wizard_tun_enable)
-                wizard_tun_enable="$value"
-                echo "已恢复：TUN启用 = $value"
-                ;;
-            wizard_sub_type)
-                wizard_sub_type="$value"
-                echo "已恢复：订阅类型 = $value"
-                ;;
-            wizard_sub_url)
-                wizard_sub_url="$value"
-                echo "已恢复：订阅URL = $value"
-                ;;
-            wizard_sub_path)
-                wizard_sub_path="$value"
-                echo "已恢复：订阅路径 = $value"
-                ;;
-            wizard_refresh_interval)
-                wizard_refresh_interval="$value"
-                echo "已恢复：刷新间隔 = $value"
-                ;;
-        esac
-    done < "${SETTINGS_FILE}"
-    
-    echo "✅ 配置恢复完成"
-    return 0
+        # 读取保留的配置
+        local proxy_user="" proxy_pass="" secret="" http_port="" api_port=""
+        local tun_enable="false" sub_type="none" sub_url="" sub_path=""
+        local refresh_interval="0"
+        
+        # 从 settings.conf 读取配置
+        if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
+            proxy_user=$(grep '^wizard_proxy_user=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            proxy_pass=$(grep '^wizard_proxy_pass=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            secret=$(grep '^wizard_secret=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            http_port=$(grep '^wizard_http_port=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            api_port=$(grep '^wizard_api_port=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            tun_enable=$(grep '^wizard_tun_enable=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            sub_path=$(grep '^wizard_sub_path=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+            refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+        fi
+        
+        # 设置默认值
+        http_port=${http_port:-7890}
+        api_port=${api_port:-9090}
+        tun_enable=${tun_enable:-false}
+        sub_type=${sub_type:-none}
+        refresh_interval=${refresh_interval:-0}
+        
+        echo "读取到配置："
+        echo "  HTTP_PORT=${http_port}, API_PORT=${api_port}"
+        echo "  TUN=${tun_enable}, SUB_TYPE=${sub_type}"
+        
+        # 保存快速安装配置到环境变量
+        export WIZARD_QUICK_MODE="true"
+        export WIZARD_HTTP_PORT="${http_port}"
+        export WIZARD_API_PORT="${api_port}"
+        export WIZARD_PROXY_USER="${proxy_user}"
+        export WIZARD_PROXY_PASS="${proxy_pass}"
+        export WIZARD_SECRET="${secret}"
+        export WIZARD_TUN_ENABLE="${tun_enable}"
+        export WIZARD_SUB_TYPE="${sub_type}"
+        export WIZARD_SUB_URL="${sub_url}"
+        export WIZARD_SUB_PATH="${sub_path}"
+        export WIZARD_REFRESH_INTERVAL="${refresh_interval}"
+        
+        # 将配置写入临时文件，供后续脚本使用
+        cat > "${TRIM_PKGVAR}/.quick_config" << EOF
+# MiProxy 快速安装配置（自动生成）
+wizard_quick_mode=true
+wizard_http_port=${http_port}
+wizard_api_port=${api_port}
+wizard_proxy_user=${proxy_user}
+wizard_proxy_pass=${proxy_pass}
+wizard_secret=${secret}
+wizard_tun_enable=${tun_enable}
+wizard_sub_type=${sub_type}
+wizard_sub_url=${sub_url}
+wizard_sub_path=${sub_path}
+wizard_refresh_interval=${refresh_interval}
+EOF
+        chmod 644 "${TRIM_PKGVAR}/.quick_config" 2>/dev/null
+        
+        # 动态生成简化向导（只有确认步骤）
+        cat > "${APP_DIR}/wizard/install" << 'WIZARD_EOF'
+[
+  {
+    "stepTitle": "快速安装确认",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "✅ 检测到您之前卸载时保留了应用数据<br><br>系统将使用您之前的配置进行快速安装：<br><br>📋 配置预览：<br>• HTTP 端口: HTTP_PORT_PLACEHOLDER<br>• API 端口: API_PORT_PLACEHOLDER<br>• TUN 模式: TUN_PLACEHOLDER<br>• 订阅类型: SUB_TYPE_PLACEHOLDER<br><br>💡 点击「开始安装」即可完成安装，无需填写任何配置。"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_confirm_quick",
+        "label": "安装确认",
+        "defaultValue": "yes",
+        "options": [
+          {"value": "yes", "label": "✅ 开始安装（使用原有配置）"}
+        ],
+        "rules": [{"required": true, "message": "请确认安装"}]
+      }
+    ]
+  }
+]
+WIZARD_EOF
+        
+        # 替换占位符
+        sed -i "s|HTTP_PORT_PLACEHOLDER|${http_port}|g" "${APP_DIR}/wizard/install"
+        sed -i "s|API_PORT_PLACEHOLDER|${api_port}|g" "${APP_DIR}/wizard/install"
+        sed -i "s|TUN_PLACEHOLDER|${tun_enable}|g" "${APP_DIR}/wizard/install"
+        sed -i "s|SUB_TYPE_PLACEHOLDER|${sub_type}|g" "${APP_DIR}/wizard/install"
+        
+        echo "已生成快速安装向导"
+        echo "===== install_init 完成（快速模式） ====="
+        exit 0
+    else
+        echo "首次安装或未保留数据，使用完整向导"
+        echo "===== install_init 完成（完整模式） ====="
+        exit 0
+    fi
 }
 
-# 主流程
-if detect_reinstall; then
-    echo "🎯 重装场景：将跳过向导，直接使用保存的配置"
-    # 标记为快速安装模式
-    echo "QUICK_INSTALL=true" >> "${TRIM_PKGVAR}/.install_env"
-else
-    echo "🆕 首次安装：将显示完整安装向导"
-fi
-
-echo "=========================================="
-exit 0
+# 执行检测
+check_reinstall

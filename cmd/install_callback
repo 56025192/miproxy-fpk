@@ -1,10 +1,8 @@
 #!/bin/bash
 # MiProxy 安装后回调脚本（v9 快速安装版）
-# 关键功能：支持"卸载后重装"场景的快速安装
-# 
-# 安装模式：
-# - wizard_install_mode=quick: 快速安装，使用保存的配置
-# - wizard_install_mode=custom: 完整安装，使用向导提交的配置
+# 关键功能：支持"快速安装"模式
+# - 首次安装：完整配置向导
+# - 重装（保留数据）：install_init 动态生成简化向导，只需确认
 
 DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
 exec 2>>"${DEBUG_LOG}"
@@ -16,203 +14,108 @@ TARGET_DIR="${VAR_DIR}/target"
 UI_TARGET="${VAR_DIR}/ui"
 CONFIG_FILE="${VAR_DIR}/config.yaml"
 LOG_FILE="${VAR_DIR}/info.log"
-SETTINGS_FILE="${TRIM_PKGETC}/settings.conf"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG_FILE}" >> "${DEBUG_LOG}"
 }
 
+# ============ 配置获取 ============
+# 优先使用 .quick_config（快速安装模式），否则使用向导配置
+QUICK_CONFIG="${VAR_DIR}/.quick_config"
+
+load_config() {
+    if [ -f "${QUICK_CONFIG}" ]; then
+        log_msg "📋 快速安装模式：使用保存的配置"
+        source "${QUICK_CONFIG}"
+        QUICK_MODE="true"
+    else
+        log_msg "📋 完整安装模式：使用向导配置"
+        # 向导配置作为默认值
+        PROXY_USER="${wizard_proxy_user:-}"
+        PROXY_PASS="${wizard_proxy_pass:-}"
+        SECRET="${wizard_secret:-}"
+        HTTP_PORT="${wizard_http_port:-7890}"
+        API_PORT="${wizard_api_port:-9090}"
+        SUB_TYPE="${wizard_sub_type:-none}"
+        SUB_URL="${wizard_sub_url:-}"
+        SUB_PATH="${wizard_sub_path:-}"
+        REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
+        TUN_ENABLE="${wizard_tun_enable:-false}"
+        QUICK_MODE="false"
+    fi
+    
+    # 确保变量有默认值
+    HTTP_PORT=${HTTP_PORT:-7890}
+    API_PORT=${API_PORT:-9090}
+    SUB_TYPE=${SUB_TYPE:-none}
+    REFRESH_INTERVAL_HOURS=${REFRESH_INTERVAL_HOURS:-0}
+    TUN_ENABLE=${TUN_ENABLE:-false}
+}
+
 log_msg "install_callback v9 启动"
 
-# ============ 配置恢复 ============
-# 从保存的配置中恢复默认值
-restore_config_from_file() {
-    if [ ! -f "${SETTINGS_FILE}" ]; then
-        log_msg "⚠️ settings.conf 不存在，使用向导提供的值"
-        return 1
-    fi
-    
-    log_msg "从 settings.conf 恢复配置..."
-    
-    while IFS='=' read -r key value; do
-        [[ "$key" =~ ^# ]] && continue
-        [[ -z "$key" ]] && continue
-        
-        case "$key" in
-            wizard_proxy_user) PROXY_USER="${PROXY_USER:-$value}" ;;
-            wizard_proxy_pass) PROXY_PASS="${PROXY_PASS:-$value}" ;;
-            wizard_secret) SECRET="${SECRET:-$value}" ;;
-            wizard_http_port) HTTP_PORT="${HTTP_PORT:-$value}" ;;
-            wizard_api_port) API_PORT="${API_PORT:-$value}" ;;
-            wizard_sub_type) SUB_TYPE="${SUB_TYPE:-$value}" ;;
-            wizard_sub_url) SUB_URL="${SUB_URL:-$value}" ;;
-            wizard_sub_path) SUB_PATH="${SUB_PATH:-$value}" ;;
-            wizard_refresh_interval) REFRESH_INTERVAL_HOURS="${REFRESH_INTERVAL_HOURS:-$value}" ;;
-            wizard_tun_enable) TUN_ENABLE="${TUN_ENABLE:-$value}" ;;
-        esac
-    done < "${SETTINGS_FILE}"
-    
-    log_msg "✅ 配置恢复完成"
-    return 0
-}
-
-# ============ 读取向导变量 ============
-INSTALL_MODE="${wizard_install_mode:-custom}"
-
-if [ "${INSTALL_MODE}" = "quick" ]; then
-    log_msg "🚀 检测到快速安装模式"
-    # 快速安装模式下，需要从保存的配置中恢复
-    restore_config_from_file
-else
-    log_msg "⚙️ 检测到自定义安装模式"
-    # 使用向导提交的值（可能为空）
-    PROXY_USER="${wizard_proxy_user:-}"
-    PROXY_PASS="${wizard_proxy_pass:-}"
-    SECRET="${wizard_secret:-}"
-    HTTP_PORT="${wizard_http_port:-7890}"
-    API_PORT="${wizard_api_port:-9090}"
-    SUB_TYPE="${wizard_sub_type:-none}"
-    SUB_URL="${wizard_sub_url:-}"
-    SUB_PATH="${wizard_sub_path:-}"
-    REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
-    TUN_ENABLE="${wizard_tun_enable:-false}"
-fi
+# 加载配置
+load_config
 
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
-log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
-log_msg "  TUN_ENABLE=${TUN_ENABLE}, REFRESH_INTERVAL=${REFRESH_INTERVAL_HOURS}h"
+log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}"
+log_msg "  TUN=${TUN_ENABLE}, QUICK_MODE=${QUICK_MODE}"
 
-# ============ 检测重装场景 ============
-check_reinstall_scenario() {
-    local preserved_file="${VAR_DIR}/.preserved"
-    
-    if [ -f "${preserved_file}" ]; then
-        log_msg "🔄 检测到 .preserved 标记：上次卸载时保留了数据"
-        return 0
-    fi
-    
-    if [ -f "${VAR_DIR}/config.yaml" ]; then
-        log_msg "🔄 检测到 config.yaml：这是重装场景"
-        return 0
-    fi
-    
-    return 1
-}
+# ============ 安装逻辑 ============
+mkdir -p "${TARGET_DIR}" "${VAR_DIR}/proxy_providers" "${UI_TARGET}" "${TRIM_PKGETC}"
 
-# ============ 仅安装程序本体（快速安装） ============
-install_binaries_only() {
-    log_msg "=== 快速安装：仅安装程序本体 ==="
-    
-    mkdir -p "${TARGET_DIR}" "${UI_TARGET}" "${TRIM_PKGETC}"
-    
-    # 复制 mihomo 核心
-    log_msg "复制 mihomo 核心..."
-    if [ -f "${APP_DEST}/server/mihomo" ]; then
-        cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo" && chmod +x "${TARGET_DIR}/mihomo"
-        log_msg "✅ mihomo 已安装"
+# 复制 mihomo 核心
+log_msg "复制 mihomo 核心..."
+[ -f "${APP_DEST}/server/mihomo" ] && cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo" && chmod +x "${TARGET_DIR}/mihomo"
+
+# 复制 UI 文件
+[ -d "${APP_DEST}/ui/zashboard" ] && mkdir -p "${UI_TARGET}/zashboard" && cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null
+[ -d "${APP_DEST}/ui/metacubexd" ] && mkdir -p "${UI_TARGET}/metacubexd" && cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null
+[ -f "${APP_DEST}/ui/config" ] && cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
+[ -f "${APP_DEST}/ui/index.html" ] && cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html"
+[ -d "${APP_DEST}/ui/images" ] && mkdir -p "${UI_TARGET}/images" && cp -rf "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null
+chmod 666 "${UI_TARGET}/config" 2>/dev/null
+
+# 复制 GEO 数据
+[ -d "${APP_DEST}/data" ] && for f in geoip.dat geosite.dat Country.mmdb; do
+    [ -f "${APP_DEST}/data/${f}" ] && cp -f "${APP_DEST}/data/${f}" "${VAR_DIR}/${f}" && chmod 666 "${VAR_DIR}/${f}" 2>/dev/null
+done
+
+# ============ 订阅处理 ============
+SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
+
+# 快速安装模式：如果订阅类型是远程，重新下载
+if [ "${QUICK_MODE}" = "true" ] && [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
+    log_msg "📡 快速安装：重新下载远程订阅"
+    if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>>"${DEBUG_LOG}"; then
+        mv "${SUB_CACHE_PATH}.tmp" "${SUB_CACHE_PATH}"
+        log_msg "  ✅ 订阅下载成功"
     else
-        log_msg "❌ mihomo 核心文件不存在！"
-        return 1
+        log_msg "  ⚠️ 订阅下载失败，将使用现有订阅"
+        rm -f "${SUB_CACHE_PATH}.tmp"
+        # 尝试使用保留的订阅
+        [ -f "${VAR_DIR}/proxy_providers/subscription.yaml" ] || log_msg "  ⚠️ 无可用订阅"
     fi
-    
-    # 复制 UI 文件
-    log_msg "复制 UI 文件..."
-    [ -d "${APP_DEST}/ui/zashboard" ] && mkdir -p "${UI_TARGET}/zashboard" && cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null
-    [ -d "${APP_DEST}/ui/metacubexd" ] && mkdir -p "${UI_TARGET}/metacubexd" && cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null
-    [ -f "${APP_DEST}/ui/config" ] && cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
-    [ -f "${APP_DEST}/ui/index.html" ] && cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html"
-    [ -d "${APP_DEST}/ui/images" ] && mkdir -p "${UI_TARGET}/images" && cp -rf "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null
-    chmod 666 "${UI_TARGET}/config" 2>/dev/null
-    log_msg "✅ UI 文件已安装"
-    
-    # 复制 GEO 数据
-    log_msg "复制 GEO 数据..."
-    [ -d "${APP_DEST}/data" ] && for f in geoip.dat geosite.dat Country.mmdb; do
-        [ -f "${APP_DEST}/data/${f}" ] && cp -f "${APP_DEST}/data/${f}" "${VAR_DIR}/${f}" && chmod 666 "${VAR_DIR}/${f}" 2>/dev/null
-    done
-    log_msg "✅ GEO 数据已安装"
-    
-    # 清理标记文件
-    rm -f "${VAR_DIR}/.preserved" "${VAR_DIR}/.install_env"
-    
-    log_msg "✅ 快速安装完成：程序已安装，原有配置已保留"
-    return 0
-}
-
-# ============ 完整安装（首次安装或重新配置） ============
-install_full() {
-    log_msg "=== 完整安装：初始化所有组件 ==="
-    
-    # 创建目录
-    mkdir -p "${TARGET_DIR}" "${VAR_DIR}/proxy_providers" "${UI_TARGET}" "${TRIM_PKGETC}"
-    
-    # 复制 mihomo 核心
-    log_msg "复制 mihomo 核心..."
-    if [ -f "${APP_DEST}/server/mihomo" ]; then
-        cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo" && chmod +x "${TARGET_DIR}/mihomo"
-        log_msg "✅ mihomo 已安装"
-    fi
-    
-    # 复制 UI 文件
-    [ -d "${APP_DEST}/ui/zashboard" ] && mkdir -p "${UI_TARGET}/zashboard" && cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null
-    [ -d "${APP_DEST}/ui/metacubexd" ] && mkdir -p "${UI_TARGET}/metacubexd" && cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null
-    [ -f "${APP_DEST}/ui/config" ] && cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
-    [ -f "${APP_DEST}/ui/index.html" ] && cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html"
-    [ -d "${APP_DEST}/ui/images" ] && mkdir -p "${UI_TARGET}/images" && cp -rf "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null
-    chmod 666 "${UI_TARGET}/config" 2>/dev/null
-    
-    # 复制 GEO 数据
-    [ -d "${APP_DEST}/data" ] && for f in geoip.dat geosite.dat Country.mmdb; do
-        [ -f "${APP_DEST}/data/${f}" ] && cp -f "${APP_DEST}/data/${f}" "${VAR_DIR}/${f}" && chmod 666 "${VAR_DIR}/${f}" 2>/dev/null
-    done
-    
-    # 下载远程订阅
-    local sub_cache_path="${VAR_DIR}/proxy_providers/subscription.yaml"
-    if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-        log_msg "📡 下载远程订阅: ${SUB_URL}"
-        if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${sub_cache_path}.tmp" 2>>"${DEBUG_LOG}"; then
-            mv "${sub_cache_path}.tmp" "${sub_cache_path}"
-            log_msg "✅ 订阅下载成功: $(wc -c < "${sub_cache_path}") bytes"
-        else
-            log_msg "⚠️ 订阅下载失败"
-            rm -f "${sub_cache_path}.tmp"
-        fi
-    fi
-    
-    # 本地订阅
-    if [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ]; then
-        cp -f "${SUB_PATH}" "${sub_cache_path}"
-        log_msg "✅ 本地订阅已复制"
-    fi
-    
-    # 生成 config.yaml
-    generate_config_yaml
-    
-    # 保存配置
-    save_settings
-    
-    # 清理标记文件
-    rm -f "${VAR_DIR}/.preserved" "${VAR_DIR}/.install_env"
-    
-    log_msg "✅ 完整安装完成"
-    return 0
-}
-
-# ============ 生成 config.yaml ============
-SUB_DOMAIN_FILTER=""
-if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
-    [ -n "${domain}" ] && SUB_DOMAIN_FILTER="    - \"${domain}\"\n    - \"*.${domain}\"\n"
 fi
 
-generate_config_yaml() {
-    log_msg "生成 config.yaml..."
-    
-    # 提取订阅配置
-    local sub_cache_path="${VAR_DIR}/proxy_providers/subscription.yaml"
-    
-    extract_yaml_block() {
-        python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
+# 完整安装模式：正常处理订阅
+if [ "${QUICK_MODE}" = "false" ]; then
+    if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
+        log_msg "下载远程订阅: ${SUB_URL}"
+        if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>>"${DEBUG_LOG}" && [ -s "${SUB_CACHE_PATH}.tmp" ]; then
+            mv "${SUB_CACHE_PATH}.tmp" "${SUB_CACHE_PATH}"
+            log_msg "  ✅ 订阅下载成功"
+        else
+            log_msg "  ⚠️ 订阅下载失败"
+            rm -f "${SUB_CACHE_PATH}.tmp"
+        fi
+    fi
+    [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ] && cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
+fi
+
+# ============ YAML 块提取 ============
+extract_yaml_block() {
+    python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import sys
 key = sys.argv[1] + ":"
 try:
@@ -241,158 +144,136 @@ for line in lines:
         result.append(line)
 sys.stdout.write(''.join(result))
 PYEOF
-    }
-    
-    local sub_proxies sub_hosts sub_pg sub_rules sub_dns
-    local sub_bypass sub_proxy_providers sub_rule_providers
-    local sub_sub_rule sub_tunnels sub_listeners sub_sniff sub_ntp sub_script
-    
-    if [ -f "${sub_cache_path}" ]; then
-        sub_proxies=$(extract_yaml_block "proxies" "${sub_cache_path}")
-        sub_hosts=$(extract_yaml_block "hosts" "${sub_cache_path}")
-        sub_pg=$(extract_yaml_block "proxy-groups" "${sub_cache_path}")
-        sub_rules=$(extract_yaml_block "rules" "${sub_cache_path}")
-        sub_dns=$(extract_yaml_block "dns" "${sub_cache_path}")
-        sub_bypass=$(extract_yaml_block "bypass" "${sub_cache_path}")
-        sub_proxy_providers=$(extract_yaml_block "proxy-providers" "${sub_cache_path}")
-        sub_rule_providers=$(extract_yaml_block "rule-providers" "${sub_cache_path}")
-        sub_sub_rule=$(extract_yaml_block "sub-rule" "${sub_cache_path}")
-        sub_tunnels=$(extract_yaml_block "tunnels" "${sub_cache_path}")
-        sub_listeners=$(extract_yaml_block "listeners" "${sub_cache_path}")
-        sub_sniff=$(extract_yaml_block "sniff" "${sub_cache_path}")
-        sub_ntp=$(extract_yaml_block "ntp" "${sub_cache_path}")
-        sub_script=$(extract_yaml_block "script" "${sub_cache_path}")
-        
-        log_msg "📦 订阅配置已加载"
-    fi
-    
-    {
-        echo "# MiProxy 主配置（v9）"
-        echo ""
-        echo "mixed-port: ${HTTP_PORT}"
-        echo "allow-lan: true"
-        echo "mode: rule"
-        echo "log-level: info"
-        echo "ipv6: false"
-        echo "external-controller: 0.0.0.0:${API_PORT}"
-        echo "external-ui: ${UI_TARGET}"
-        echo "external-ui-name: zashboard"
-        [ -n "${SECRET}" ] && echo "secret: \"${SECRET}\""
-        [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ] && echo "authentication:" && echo "  - \"${PROXY_USER}:${PROXY_PASS}\""
-        echo "external-controller-cors:"
-        echo "  allow-private-network: true"
-        echo "  allow-origins: [\"*\"]"
-        echo "geodata-mode: true"
-        echo "geodata-loader: memconservative"
-        echo "tun:"
-        echo "  enable: ${TUN_ENABLE}"
-        echo "  stack: system"
-        echo "  auto-route: true"
-        echo "  auto-redirect: true"
-        echo "  auto-detect-interface: true"
-        echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
-        
-        [ -n "${sub_proxies}" ] && echo "# 节点列表" && echo "${sub_proxies}"
-        [ -n "${sub_hosts}" ] && echo "# hosts" && echo "${sub_hosts}"
-        
-        if [ -n "${sub_pg}" ]; then
-            echo "# 代理组"
-            echo "${sub_pg}"
-        else
-            echo "proxy-groups:"
-            echo "  - name: PROXY; type: select; proxies: [DIRECT, REJECT]"
-        fi
-        
-        if [ -n "${sub_rules}" ]; then
-            echo "# 路由规则"
-            echo "${sub_rules}"
-        else
-            echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
-        fi
-        
-        if [ -n "${sub_dns}" ]; then
-            echo "# DNS"
-            echo "${sub_dns}"
-        else
-            echo "dns:"
-            echo "  enable: true; listen: 0.0.0.0:53"
-            echo "  enhanced-mode: fake-ip; fake-ip-range: 198.18.0.1/16"
-            echo "  fake-ip-filter: [\"+.lan\", \"+.local\"${SUB_DOMAIN_FILTER:+, \"${domain}\", \"*.${domain}\"}]"
-            echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
-        fi
-        
-        [ -n "${sub_bypass}" ] && echo "# bypass" && echo "${sub_bypass}"
-        [ -n "${sub_proxy_providers}" ] && echo "# proxy-providers" && echo "${sub_proxy_providers}"
-        [ -n "${sub_rule_providers}" ] && echo "# rule-providers" && echo "${sub_rule_providers}"
-        [ -n "${sub_sub_rule}" ] && echo "# sub-rule" && echo "${sub_sub_rule}"
-        [ -n "${sub_tunnels}" ] && echo "# tunnels" && echo "${sub_tunnels}"
-        [ -n "${sub_listeners}" ] && echo "# listeners" && echo "${sub_listeners}"
-        [ -n "${sub_sniff}" ] && echo "# sniff" && echo "${sub_sniff}"
-        [ -n "${sub_ntp}" ] && echo "# ntp" && echo "${sub_ntp}"
-        [ -n "${sub_script}" ] && echo "# script" && echo "${sub_script}"
-    } > "${CONFIG_FILE}"
-    
-    chmod 666 "${CONFIG_FILE}"
-    log_msg "✅ config.yaml 已生成"
 }
 
-# ============ 保存配置到 settings.conf ============
-save_settings() {
-    log_msg "保存配置到 settings.conf..."
-    
-    {
-        echo "wizard_http_port=${HTTP_PORT}"
-        echo "wizard_api_port=${API_PORT}"
-        echo "wizard_tun_enable=${TUN_ENABLE}"
-        echo "wizard_sub_type=${SUB_TYPE}"
-        echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
-        [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
-        [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
-        [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
-        [ -n "${SUB_URL}" ] && echo "wizard_sub_url=${SUB_URL}"
-        [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
-    } > "${SETTINGS_FILE}"
-    
-    chmod 666 "${SETTINGS_FILE}" 2>/dev/null
-    log_msg "✅ 配置已保存"
-}
+# ============ 字段同步 ============
+SUB_PROXIES=""; SUB_HOSTS=""; SUB_PG=""; SUB_RULES=""; SUB_DNS=""
+SUB_BYPASS=""; SUB_PROXY_PROVIDERS=""; SUB_RULE_PROVIDERS=""; SUB_SUB_RULE=""
+SUB_TUNNELS=""; SUB_LISTENERS=""; SUB_SNIFF=""; SUB_NTP=""; SUB_SCRIPT=""
 
-# ============ 启动 miproxy ============
-start_service() {
-    log_msg "启动 miproxy..."
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if bash "${script_dir}/main" start 2>>"${DEBUG_LOG}"; then
-        log_msg "✅ miproxy 启动成功"
-        return 0
+if [ -f "${SUB_CACHE_PATH}" ]; then
+    SUB_PROXIES=$(extract_yaml_block "proxies" "${SUB_CACHE_PATH}")
+    SUB_HOSTS=$(extract_yaml_block "hosts" "${SUB_CACHE_PATH}")
+    SUB_PG=$(extract_yaml_block "proxy-groups" "${SUB_CACHE_PATH}")
+    SUB_RULES=$(extract_yaml_block "rules" "${SUB_CACHE_PATH}")
+    SUB_DNS=$(extract_yaml_block "dns" "${SUB_CACHE_PATH}")
+    SUB_BYPASS=$(extract_yaml_block "bypass" "${SUB_CACHE_PATH}")
+    SUB_PROXY_PROVIDERS=$(extract_yaml_block "proxy-providers" "${SUB_CACHE_PATH}")
+    SUB_RULE_PROVIDERS=$(extract_yaml_block "rule-providers" "${SUB_CACHE_PATH}")
+    SUB_SUB_RULE=$(extract_yaml_block "sub-rule" "${SUB_CACHE_PATH}")
+    SUB_TUNNELS=$(extract_yaml_block "tunnels" "${SUB_CACHE_PATH}")
+    SUB_LISTENERS=$(extract_yaml_block "listeners" "${SUB_CACHE_PATH}")
+    SUB_SNIFF=$(extract_yaml_block "sniff" "${SUB_CACHE_PATH}")
+    SUB_NTP=$(extract_yaml_block "ntp" "${SUB_CACHE_PATH}")
+    SUB_SCRIPT=$(extract_yaml_block "script" "${SUB_CACHE_PATH}")
+    
+    log_msg "  📦 字段同步统计:"
+    log_msg "      proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行"
+    log_msg "      proxy-groups:$(printf '%s' "${SUB_PG}" | wc -l)行"
+    log_msg "      rules:$(printf '%s' "${SUB_RULES}" | wc -l)行"
+    
+    [ -n "${SUB_DNS}" ] && ! printf '%s' "${SUB_DNS}" | grep -q "nameserver" && SUB_DNS="" && log_msg "  ⚠️ dns 缺 nameserver，回退本地默认"
+fi
+
+# ============ 订阅域名过滤 ============
+SUB_DOMAIN_FILTER=""
+if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
+    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
+    [ -n "${domain}" ] && SUB_DOMAIN_FILTER="    - \"${domain}\"\n    - \"*.${domain}\"\n"
+fi
+
+# ============ 生成配置 ============
+log_msg "生成 config.yaml..."
+
+{
+    echo "# MiProxy 主配置（v9：快速安装支持）"
+    echo ""
+    echo "mixed-port: ${HTTP_PORT}"
+    echo "allow-lan: true"
+    echo "mode: rule"
+    echo "log-level: info"
+    echo "ipv6: false"
+    echo "external-controller: 0.0.0.0:${API_PORT}"
+    echo "external-ui: ${UI_TARGET}"
+    echo "external-ui-name: zashboard"
+    [ -n "${SECRET}" ] && echo "secret: \"${SECRET}\""
+    [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ] && echo "authentication:" && echo "  - \"${PROXY_USER}:${PROXY_PASS}\""
+    echo "external-controller-cors:"
+    echo "  allow-private-network: true"
+    echo "  allow-origins: [\"*\"]"
+    echo "geodata-mode: true"
+    echo "geodata-loader: memconservative"
+    echo "tun:"
+    echo "  enable: ${TUN_ENABLE}"
+    echo "  stack: system"
+    echo "  auto-route: true"
+    echo "  auto-redirect: true"
+    echo "  auto-detect-interface: true"
+    echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
+
+    [ -n "${SUB_PROXIES}" ] && echo "# 节点列表（来自订阅源）" && echo "${SUB_PROXIES}"
+    [ -n "${SUB_HOSTS}" ] && echo "# hosts（来自订阅源）" && echo "${SUB_HOSTS}"
+
+    if [ -n "${SUB_PG}" ]; then
+        echo "# 代理组（来自订阅源）"
+        echo "${SUB_PG}"
     else
-        log_msg "⚠️ miproxy 启动失败"
-        return 1
+        echo "proxy-groups:"
+        echo "  - name: PROXY; type: select; proxies: [DIRECT, REJECT]"
     fi
-}
 
-# ============ 主流程 ============
-main() {
-    log_msg "安装模式: ${INSTALL_MODE}"
-    
-    if [ "${INSTALL_MODE}" = "quick" ]; then
-        # 快速安装
-        if check_reinstall_scenario; then
-            install_binaries_only
-            save_settings  # 更新配置文件的可能变化
-            start_service
-        else
-            log_msg "⚠️ 快速安装模式下未检测到保留数据，切换到完整安装"
-            install_full
-            start_service
-        fi
+    if [ -n "${SUB_RULES}" ]; then
+        echo "# 路由规则（来自订阅源）"
+        echo "${SUB_RULES}"
     else
-        # 完整安装
-        install_full
-        start_service
+        echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
     fi
-    
-    log_msg "===== install_callback v9 完成 ====="
-    exit 0
-}
 
-main "$@"
+    if [ -n "${SUB_DNS}" ]; then
+        echo "# DNS（来自订阅源）"
+        echo "${SUB_DNS}"
+    else
+        echo "dns:"
+        echo "  enable: true; listen: 0.0.0.0:53"
+        echo "  enhanced-mode: fake-ip; fake-ip-range: 198.18.0.1/16"
+        echo "  fake-ip-filter: [\"+.lan\", \"+.local\"${SUB_DOMAIN_FILTER:+, \"${domain}\", \"*.${domain}\"}]"
+        echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
+    fi
+
+    [ -n "${SUB_BYPASS}" ] && echo "# bypass 私有绕过列表（来自订阅源）" && echo "${SUB_BYPASS}"
+    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers 代理集合（来自订阅源）" && echo "${SUB_PROXY_PROVIDERS}"
+    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers 规则集合（来自订阅源）" && echo "${SUB_RULE_PROVIDERS}"
+    [ -n "${SUB_SUB_RULE}" ] && echo "# sub-rule 子规则（来自订阅源）" && echo "${SUB_SUB_RULE}"
+    [ -n "${SUB_TUNNELS}" ] && echo "# tunnels 流量隧道（来自订阅源）" && echo "${SUB_TUNNELS}"
+    [ -n "${SUB_LISTENERS}" ] && echo "# listeners 监听器（来自订阅源）" && echo "${SUB_LISTENERS}"
+    [ -n "${SUB_SNIFF}" ] && echo "# sniff 嗅探（来自订阅源）" && echo "${SUB_SNIFF}"
+    [ -n "${SUB_NTP}" ] && echo "# ntp 时间同步（来自订阅源）" && echo "${SUB_NTP}"
+    [ -n "${SUB_SCRIPT}" ] && echo "# script 脚本（来自订阅源）" && echo "${SUB_SCRIPT}"
+} > "${CONFIG_FILE}"
+
+chmod 666 "${CONFIG_FILE}"
+log_msg "✅ config.yaml 已生成"
+
+# 清理临时文件
+rm -f "${VAR_DIR}/base.yaml" "${VAR_DIR}/subscription.yaml" "${VAR_DIR}/subscription.conf" "${QUICK_CONFIG}"
+
+# 保存设置
+{
+    echo "wizard_http_port=${HTTP_PORT}; wizard_api_port=${API_PORT}; wizard_tun_enable=${TUN_ENABLE}"
+    echo "wizard_sub_type=${SUB_TYPE}; wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
+    [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
+    [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
+    [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
+    [ -n "${SUB_URL}" ] && echo "wizard_sub_url=${SUB_URL}"
+    [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
+} > "${TRIM_PKGETC}/settings.conf"
+chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
+
+# 清理保留标记
+rm -f "${VAR_DIR}/.preserved"
+
+# 启动服务
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bash "${SCRIPT_DIR}/main" start 2>>"${DEBUG_LOG}" && log_msg "✅ miproxy 启动成功" || log_msg "⚠️  miproxy 启动失败"
+log_msg "===== install_callback v9 完成 ====="
+exit 0

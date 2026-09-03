@@ -111,13 +111,11 @@
       
       <div class="form-group" id="groupProxyUser">
         <label>代理用户名</label>
-        <input type="text" id="proxyUser" placeholder="留空则不启用认证">
         <p class="help">用于 mihomo 代理连接验证</p>
       </div>
       
       <div class="form-group" id="groupProxyPass">
         <label>代理密码</label>
-        <input type="password" id="proxyPass" placeholder="留空则不启用认证">
         <p class="help">代理连接的密码</p>
       </div>
       
@@ -183,8 +181,6 @@
       message.textContent = '';
       
       const data = {
-        proxyUser: document.getElementById('proxyUser').value,
-        proxyPass: document.getElementById('proxyPass').value,
         secret: document.getElementById('secret').value,
         subType: document.getElementById('subType').value,
         subUrl: document.getElementById('subUrl').value,

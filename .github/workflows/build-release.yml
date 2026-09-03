@@ -149,7 +149,9 @@ jobs:
           /tmp/fnpack --version 2>&1 || echo "无法获取版本"
           echo ""
           echo "=== 运行 fnpack ==="
-          /tmp/fnpack build --directory . 2>&1 || {
+          /tmp/fnpack build --directory . 2>&1 | tee /tmp/fnpack_output.log
+echo "EXIT_CODE=$?"
+if [ $? -ne 0 ]; then
             echo "fnpack 退出码: $?"
             exit 1
           }
@@ -244,7 +246,9 @@ jobs:
           /tmp/fnpack --version 2>&1 || echo "无法获取版本"
           echo ""
           echo "=== 运行 fnpack ==="
-          /tmp/fnpack build --directory . 2>&1 || {
+          /tmp/fnpack build --directory . 2>&1 | tee /tmp/fnpack_output.log
+echo "EXIT_CODE=$?"
+if [ $? -ne 0 ]; then
             echo "fnpack 退出码: $?"
             exit 1
           }

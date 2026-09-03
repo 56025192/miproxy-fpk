@@ -1,0 +1,11 @@
+[
+  {
+    "stepTitle": "欢迎",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "MiProxy - 基于 mihomo 代理核心"
+      }
+    ]
+  }
+]

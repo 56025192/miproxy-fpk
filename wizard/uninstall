@@ -12,17 +12,17 @@
       },
       {
         "type": "radio",
-        "key": "uninstall_mode",
-        "default": "keep_data",
+        "key": "data_action",
+        "default": "keep",
         "list": [
           {
             "label": "保留数据",
-            "value": "keep_data",
+            "value": "keep",
             "desc": "卸载应用但保留配置文件和订阅数据\n• 再次安装时可恢复之前的配置\n• 适用于重新安装或升级场景"
           },
           {
             "label": "删除全部数据",
-            "value": "delete_all",
+            "value": "delete",
             "desc": "卸载应用并删除所有相关数据\n• 将删除所有配置文件\n• 将删除订阅缓存数据\n• 此操作不可恢复"
           }
         ]
@@ -42,10 +42,10 @@
       },
       {
         "type": "showconfig",
-        "key": "uninstall_mode",
+        "key": "data_action",
         "map": {
-          "keep_data": "✓ 保留数据 - 配置将保留，可用于下次安装",
-          "delete_all": "⚠ 删除全部数据 - 将永久删除所有数据"
+          "keep": "✓ 保留数据 - 配置将保留，可用于下次安装",
+          "delete": "⚠ 删除全部数据 - 将永久删除所有数据"
         }
       },
       {

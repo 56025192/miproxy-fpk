@@ -1,10 +1,37 @@
 [
   {
-    "stepTitle": "欢迎安装 MiProxy",
+    "stepTitle": "关于 MiProxy",
     "items": [
       {
         "type": "tips",
-        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用<br><br>✨ 功能特性：<br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：mihomo proxy-providers 内置自动刷新<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br><br>💡 安装后可随时通过控制面板修改配置"
+        "helpText": "<b>MiProxy</b> 是基于 <b>mihomo</b>（MetaCubeX/mihomo）核心开发的轻量级代理工具，提供简单易用的 Web 管理界面。<br><br>支持 VMess、VLess、Trojan、Shadowsocks、Hysteria2 等多种代理协议，兼容 Clash/Mihomo 配置格式。"
+      }
+    ]
+  },
+  {
+    "stepTitle": "主要功能特性",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "<b>✨ 核心功能：</b><br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：mihomo proxy-providers 内置自动刷新<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br><br><b>📊 管理功能：</b><br>• 实时流量统计<br>• 节点延迟测试<br>• 规则管理<br>• 配置在线编辑"
+      }
+    ]
+  },
+  {
+    "stepTitle": "使用场景",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "<b>🌍 跨境网络访问</b><br>访问海外网站和服务<br><br><b>🔒 保护隐私安全</b><br>加密本地网络流量<br><br><b>📡 自建代理服务</b><br>使用自己的服务器搭建代理<br><br><b>📺 流媒体解锁</b><br>解锁海外流媒体服务"
+      }
+    ]
+  },
+  {
+    "stepTitle": "安装前置条件",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "<b>⚠️ 安装前请确认以下条件：</b><br><br>✅ fnOS 系统已安装并正常运行<br>✅ 网络连接正常<br>✅ 建议保留以下端口：<br>&nbsp;&nbsp;- 7890（HTTP 代理）<br>&nbsp;&nbsp;- 7891（SOCKS5 代理）<br>&nbsp;&nbsp;- 9090（管理 API）<br>&nbsp;&nbsp;- 8090（Web 控制面板）<br><br>💡 安装后可随时通过控制面板修改配置和端口"
       }
     ]
   },
@@ -66,7 +93,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "配置代理节点订阅，支持远程订阅 URL 和本地订阅文件两种方式。<br><br>📡 远程订阅：输入订阅链接地址，mihomo 自动获取并解码<br>📁 本地订阅：指定本地 YAML 配置文件路径<br>⏱️ 自动刷新：由 mihomo proxy-providers 内置 interval 功能实现<br><br>💡 可跳过安装，后续在控制面板中配置。"
+        "helpText": "配置代理节点订阅，支持远程订阅 URL 和本地订阅文件两种方式。<br><br>📡 <b>远程订阅</b>：输入订阅链接地址，mihomo 自动获取并解码<br>📁 <b>本地订阅</b>：指定本地 YAML 配置文件路径<br>⏱️ <b>自动刷新</b>：由 mihomo proxy-providers 内置 interval 功能实现<br><br>💡 可跳过安装，后续在控制面板中配置。"
       },
       {
         "type": "radio",
@@ -74,7 +101,7 @@
         "label": "订阅类型",
         "defaultValue": "none",
         "options": [
-          {"value": "none", "label": "暂不配置（推荐）"},
+          {"value": "none", "label": "暂不配置"},
           {"value": "remote", "label": "远程订阅 URL"},
           {"value": "local", "label": "本地订阅文件"}
         ],
@@ -83,34 +110,31 @@
       {
         "type": "text",
         "field": "wizard_sub_url",
-        "label": "订阅 URL",
+        "label": "远程订阅 URL",
         "initValue": "",
         "placeholder": "https://example.com/api/v1/client/subscribe?token=xxx",
-        "rules": [],
-        "visibleIf": {"field": "wizard_sub_type", "value": "remote"}
+        "rules": []
       },
       {
         "type": "text",
         "field": "wizard_sub_path",
-        "label": "本地订阅文件",
+        "label": "本地订阅文件路径",
         "initValue": "/vol1/@appshare/miproxy/sub.yaml",
         "placeholder": "/vol1/@appshare/miproxy/sub.yaml",
-        "rules": [],
-        "visibleIf": {"field": "wizard_sub_type", "value": "local"}
+        "rules": []
       },
       {
         "type": "radio",
         "field": "wizard_refresh_interval",
-        "label": "自动刷新",
-        "defaultValue": "0",
+        "label": "自动刷新订阅",
+        "defaultValue": "6",
         "options": [
-          {"value": "0", "label": "关闭自动刷新"},
+          {"value": "0", "label": "禁用"},
           {"value": "1", "label": "每 1 小时"},
           {"value": "6", "label": "每 6 小时"},
           {"value": "12", "label": "每 12 小时"},
           {"value": "24", "label": "每 24 小时"}
-        ],
-        "rules": [{"required": true, "message": "请选择刷新间隔"}]
+        ]
       }
     ]
   }

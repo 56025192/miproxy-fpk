@@ -1,48 +1,18 @@
 #!/bin/bash
-
+#
 # MiProxy 升级后回调
-# 职责：复制新版核心文件、更新 GEO 数据库，然后平滑重启
+# 功能：升级完成后启动服务
+#
 
-set +e  # 不因错误中断
+set +e
 
-APP_DEST="${TRIM_APPDEST}"
-TARGET_DIR="${TRIM_PKGVAR}/target"
-VAR_DIR="${TRIM_PKGVAR}"
+# 路径配置
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_FILE="${VAR_DIR}/info.log"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrade_callback: 升级后处理" >> "${LOG_FILE}"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] upgrade_callback: 升级完成，启动服务..."
 
-# 复制新版 mihomo 核心
-if [ -f "${APP_DEST}/server/mihomo" ]; then
-    cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo"
-    chmod +x "${TARGET_DIR}/mihomo"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrade_callback: mihomo 核心已更新" >> "${LOG_FILE}"
-fi
+# 启动服务
+bash "${SCRIPT_DIR}/main" start 2>/dev/null || true
 
-# 更新离线 GEO 数据库（如果有新版）
-if [ -d "${APP_DEST}/data" ]; then
-    [ -f "${APP_DEST}/data/geoip.dat" ] && cp -f "${APP_DEST}/data/geoip.dat" "${VAR_DIR}/geoip.dat"
-    [ -f "${APP_DEST}/data/geosite.dat" ] && cp -f "${APP_DEST}/data/geosite.dat" "${VAR_DIR}/geosite.dat"
-    [ -f "${APP_DEST}/data/Country.mmdb" ] && cp -f "${APP_DEST}/data/Country.mmdb" "${VAR_DIR}/Country.mmdb"
-    chmod 666 "${VAR_DIR}/geoip.dat" "${VAR_DIR}/geosite.dat" "${VAR_DIR}/Country.mmdb" 2>/dev/null || true
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrade_callback: GEO 数据库已更新" >> "${LOG_FILE}"
-fi
-
-# 重新生成主配置（确保新版核心兼容配置格式）
-if [ -f "${VAR_DIR}/base.yaml" ] && [ -f "${VAR_DIR}/subscription.yaml" ]; then
-    python3 "${SCRIPT_DIR}/merge_config.py" "${VAR_DIR}/base.yaml" "${VAR_DIR}/subscription.yaml" "${VAR_DIR}/config.yaml"
-    chmod 666 "${VAR_DIR}/config.yaml"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrade_callback: 配置已重新生成" >> "${LOG_FILE}"
-fi
-
-# 平滑重启主进程
-echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrade_callback: 启动 miproxy..." >> "${LOG_FILE}"
-bash "${SCRIPT_DIR}/main" start >> "${LOG_FILE}" 2>&1
-
-# 重新启动订阅刷新守护进程
-sleep 2
-bash "${SCRIPT_DIR}/main" start-refresh >> "${LOG_FILE}" 2>&1 || true
-
-echo "$(date '+%Y-%m-%d %H:%M:%S') - upgrade_callback: 升级后处理完成" >> "${LOG_FILE}"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] upgrade_callback: 升级完成"
 exit 0

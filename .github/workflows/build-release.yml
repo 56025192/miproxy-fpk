@@ -129,7 +129,21 @@ jobs:
         id: build-x86
         run: |
           echo "🔨 开始打包 x86_64..."
-          /tmp/fnpack build --directory . 2>&1
+          echo "=== 检查目录结构 ==="
+          ls -la
+          echo ""
+          echo "=== 检查 manifest ==="
+          cat manifest
+          echo ""
+          echo "=== 运行 fnpack ==="
+          /tmp/fnpack build --directory . 2>&1 || {
+            echo "fnpack 退出码: $?"
+            echo "=== 目录内容 ==="
+            ls -la
+            echo "=== 尝试详细模式 ==="
+            /tmp/fnpack build --directory . --verbose 2>&1 || true
+            exit 1
+          }
           
           FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then
@@ -201,7 +215,21 @@ jobs:
         id: build-arm
         run: |
           echo "🔨 开始打包 ARM64..."
-          /tmp/fnpack build --directory . 2>&1
+          echo "=== 检查目录结构 ==="
+          ls -la
+          echo ""
+          echo "=== 检查 manifest ==="
+          cat manifest
+          echo ""
+          echo "=== 运行 fnpack ==="
+          /tmp/fnpack build --directory . 2>&1 || {
+            echo "fnpack 退出码: $?"
+            echo "=== 目录内容 ==="
+            ls -la
+            echo "=== 尝试详细模式 ==="
+            /tmp/fnpack build --directory . --verbose 2>&1 || true
+            exit 1
+          }
           
           FPK=$(ls *.fpk 2>/dev/null | head -1)
           if [ -n "$FPK" ]; then

@@ -1,10 +1,71 @@
 [
   {
-    "stepTitle": "卸载",
+    "stepTitle": "卸载方式选择",
     "items": [
       {
-        "type": "tips",
-        "helpText": "确认卸载 MiProxy"
+        "type": "title",
+        "title": "选择卸载方式"
+      },
+      {
+        "type": "desc",
+        "desc": "请选择您想要的卸载方式："
+      },
+      {
+        "type": "radio",
+        "key": "uninstall_mode",
+        "default": "keep_data",
+        "list": [
+          {
+            "label": "保留数据",
+            "value": "keep_data",
+            "desc": "卸载应用但保留配置文件和订阅数据
+• 再次安装时可恢复之前的配置
+• 适用于重新安装或升级场景"
+          },
+          {
+            "label": "删除全部数据",
+            "value": "delete_all",
+            "desc": "卸载应用并删除所有相关数据
+• 将删除所有配置文件
+• 将删除订阅缓存数据
+• 此操作不可恢复"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "stepTitle": "确认卸载",
+    "items": [
+      {
+        "type": "title",
+        "title": "确认信息"
+      },
+      {
+        "type": "desc",
+        "desc": "请确认您的卸载选择："
+      },
+      {
+        "type": "showconfig",
+        "key": "uninstall_mode",
+        "map": {
+          "keep_data": "✓ 保留数据 - 配置将保留，可用于下次安装",
+          "delete_all": "⚠ 删除全部数据 - 将永久删除所有数据"
+        }
+      },
+      {
+        "type": "warning",
+        "helpText": "删除全部数据操作不可恢复，请在确认前备份重要配置"
+      },
+      {
+        "type": "checkbox",
+        "key": "confirm_delete",
+        "list": [
+          {
+            "label": "我已了解卸载后果，确认继续",
+            "value": "true"
+          }
+        ]
       }
     ]
   }

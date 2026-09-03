@@ -1,5 +1,57 @@
 #!/bin/bash
-# 占位脚本：安装后回调
-# 注意：WebUI 安装流程不再使用此脚本
-# 安装后的初始化现在通过 cmd/main api 处理
+#
+# MiProxy 安装完成回调
+# 功能：安装完成后初始化必要文件和目录
+#
+
+set -e
+
+# 路径配置
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(dirname "$SCRIPT_DIR")"
+VAR_DIR="${TRIM_PKGVAR:-/var/packages/miproxy/var}"
+LOG_DIR="${VAR_DIR}/logs"
+DATA_DIR="${VAR_DIR}/data"
+CONF_DIR="${VAR_DIR}/config"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 开始初始化..."
+
+# 创建必要的目录
+mkdir -p "$LOG_DIR"
+mkdir -p "$DATA_DIR"
+mkdir -p "$CONF_DIR"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 目录创建完成"
+
+# 如果没有配置文件，创建默认配置
+if [ ! -f "${CONF_DIR}/config.yaml" ]; then
+    cat > "${CONF_DIR}/config.yaml" << 'CONFIG'
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: info
+external-controller: 0.0.0.0:9090
+secret: ''
+
+dns:
+  enable: true
+  listen: 0.0.0.0:53
+  enhanced-mode: fake-ip
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+
+proxies: []
+proxy-groups: []
+rules: []
+CONFIG
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 默认配置已创建"
+fi
+
+# 启动服务
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 启动服务..."
+bash "${SCRIPT_DIR}/main" start
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 安装完成"
 exit 0

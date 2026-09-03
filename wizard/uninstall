@@ -1,20 +1,47 @@
 [
   {
-    "stepTitle": "卸载选项",
+    "stepTitle": "卸载确认",
     "items": [
       {
         "type": "tips",
-        "helpText": "卸载时可选择是否保留应用数据。如果选择保留，下次安装时仍可继续使用原有配置。"
+        "helpText": "<b>⚠️ 重要提示</b><br><br>即将卸载 MiProxy 应用。请选择数据处理方式。"
+      }
+    ]
+  },
+  {
+    "stepTitle": "数据处理方式",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "<b>请选择卸载方式：</b><br><br><b>选项一：保留数据（推荐）</b><br>保留订阅、配置和面板数据。卸载后可以随时重新安装，继续使用原有配置，无需再次设置。<br><br><b>选项二：删除全部数据</b><br>彻底清除所有订阅、配置、日志和面板文件。此操作不可恢复！<br><br>⚠️ 选择「删除全部数据」前请确认您已备份重要配置。"
       },
       {
         "type": "radio",
         "field": "wizard_data_action",
-        "label": "数据处理方式",
+        "label": "选择卸载方式",
         "defaultValue": "keep",
         "options": [
-          { "value": "keep", "label": "保留数据（推荐）— 保留订阅、配置和面板，卸载后可重新安装继续使用" },
-          { "value": "delete", "label": "删除全部数据 — 彻底清除所有订阅、配置、日志和面板文件" }
-        ]
+          {"value": "keep", "label": "保留数据（推荐）— 保留订阅、配置和面板，卸载后可重新安装继续使用"},
+          {"value": "delete", "label": "删除全部数据 ⚠️ — 彻底清除所有数据，此操作不可恢复！"}
+        ],
+        "rules": [{"required": true, "message": "请选择数据处理方式"}]
+      },
+      {
+        "type": "text",
+        "field": "wizard_confirm_delete",
+        "label": "确认删除（仅删除全部数据时填写）",
+        "initValue": "",
+        "placeholder": "如选择「删除全部数据」，请输入 DELETE 以确认",
+        "rules": []
+      }
+    ]
+  },
+  {
+    "stepTitle": "注意事项",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "<b>📌 卸载说明：</b><br><br>• 卸载过程不会影响 fnOS 系统和其他应用<br>• 如需彻底删除，建议在 fnOS 应用管理中同时移除应用残留<br>• 重新安装时可选择「保留数据」快速恢复配置"
       }
     ]
   }

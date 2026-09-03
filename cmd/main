@@ -194,6 +194,41 @@ do_api() {
     /config/preview)
         [ -f "${CONFIG_FILE}" ] && cat "${CONFIG_FILE}" || echo "# 无配置"
         ;;
+    /config/update)
+        if [ "${REQUEST_METHOD}" = "POST" ]; then
+            # 读取 POST body
+            read -r body
+            # 解析 JSON 并更新设置
+            http_port=$(echo "${body}" | grep -o '"httpPort"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$')
+            api_port=$(echo "${body}" | grep -o '"apiPort"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$')
+            secret=$(echo "${body}" | grep -o '"secret"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\(.*\)"/\1/')
+            sub_type=$(echo "${body}" | grep -o '"subType"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\(.*\)"/\1/')
+            sub_url=$(echo "${body}" | grep -o '"subUrl"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\(.*\)"/\1/')
+            mode=$(echo "${body}" | grep -o '"mode"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\(.*\)"/\1/')
+            allow_lan=$(echo "${body}" | grep -o '"allowLan"[[:space:]]*:[[:space:]]*[^,}]*' | awk '{print $NF}')
+            log_level=$(echo "${body}" | grep -o '"logLevel"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\(.*\)"/\1/')
+            
+            # 更新设置文件
+            [ -n "${http_port}" ] && write_settings "http_port" "${http_port}"
+            [ -n "${api_port}" ] && write_settings "api_port" "${api_port}"
+            [ -n "${secret}" ] && write_settings "secret" "${secret}"
+            [ -n "${sub_type}" ] && write_settings "sub_type" "${sub_type}"
+            [ -n "${sub_url}" ] && write_settings "sub_url" "${sub_url}"
+            [ -n "${mode}" ] && write_settings "mode" "${mode}"
+            [ -n "${allow_lan}" ] && write_settings "allow_lan" "${allow_lan}"
+            [ -n "${log_level}" ] && write_settings "log_level" "${log_level}"
+            
+            # 重启 mihomo
+            do_stop
+            sleep 1
+            generate_default_config
+            do_start
+            
+            echo "{"success": true, "message": "配置已更新"}"
+        else
+            echo "{"error": "method_not_allowed"}"
+        fi
+        ;;
     *)
         echo "{"error": "not_found"}"
         ;;

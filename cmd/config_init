@@ -1,0 +1,4 @@
+#!/bin/bash
+# 占位脚本：配置变更前回调
+# 注意：配置变更现在通过 cmd/config_callback 处理
+exit 0

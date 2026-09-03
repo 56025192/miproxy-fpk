@@ -7,29 +7,37 @@
 set +e
 
 # 路径配置
-VAR_DIR="${TRIM_PKGVAR:-/var/packages/miproxy/var}"
+VAR_DIR="/var/packages/miproxy/var"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 开始卸载..."
 
 # 获取卸载选项（默认保留数据）
 DATA_ACTION="${wizard_data_action:-keep}"
+CONFIRM_DELETE="${wizard_confirm_delete:-}"
 
 if [ "$DATA_ACTION" = "delete" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 删除全部数据"
-    
-    # 删除所有数据目录内容
-    if [ -d "$VAR_DIR" ]; then
-        rm -rf "$VAR_DIR"/*
-    fi
-    
-    # 尝试删除数据备份目录（如果存在）
-    for backup_dir in /var/packages/miproxy/var_backup /tmp/miproxy_backup; do
-        if [ -d "$backup_dir" ]; then
-            rm -rf "$backup_dir" 2>/dev/null || true
+    # 如果选择删除，需要确认用户输入了 DELETE
+    if [ -n "$CONFIRM_DELETE" ] && [ "$CONFIRM_DELETE" = "DELETE" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 确认删除全部数据"
+        
+        # 删除主数据目录
+        if [ -d "$VAR_DIR" ]; then
+            rm -rf "$VAR_DIR"/* 2>/dev/null || true
+            rm -rf "$VAR_DIR"/.* 2>/dev/null || true
         fi
-    done
-    
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 所有数据已删除"
+        
+        # 删除备份目录（如果存在）
+        rm -rf /var/packages/miproxy/var_backup 2>/dev/null || true
+        rm -rf /tmp/miproxy_backup 2>/dev/null || true
+        
+        # 删除整个 VAR_DIR 目录（如果为空）
+        rmdir "$VAR_DIR" 2>/dev/null || true
+        
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 所有数据已删除"
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 未确认删除，保留数据"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 如需删除，请输入 DELETE 确认"
+    fi
 else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 保留数据（下次安装可继续使用）"
 fi

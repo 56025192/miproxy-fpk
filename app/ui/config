@@ -1,14 +1,32 @@
 {
   ".url": {
-    "miproxy.dashboard": {
-      "title": "MiProxy 控制面板",
-      "desc": "mihomo 代理核心，点击选择控制面板",
+    "miproxy.home": {
+      "title": "MiProxy 首页",
       "icon": "images/icon_{0}.png",
       "type": "iframe",
       "protocol": "http",
       "port": "9090",
       "url": "/ui/index.html",
       "allUsers": true
+    },
+    "miproxy.admin": {
+      "title": "MiProxy 管理面板",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "http",
+      "port": "9090",
+      "url": "/ui/admin.html",
+      "allUsers": true
+    },
+    "miproxy.install": {
+      "title": "安装 MiProxy",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "http",
+      "port": "9090",
+      "url": "/ui/install.html",
+      "allUsers": true,
+      "noDisplay": true
     }
   }
 }

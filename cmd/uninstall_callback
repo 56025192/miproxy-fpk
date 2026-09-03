@@ -11,10 +11,11 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
-# 获取卸载模式
-UNINSTALL_MODE=$(grep '^uninstall_mode=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2 | tr -d ' \n')
+# 获取卸载模式 (data_action: keep=保留数据, delete=删除全部)
+DATA_ACTION=$(grep '^data_action=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2 | tr -d ' \n')
+DATA_ACTION="${DATA_ACTION:-keep}"
 
-log_msg "开始卸载 MiProxy (模式: ${UNINSTALL_MODE:-keep_data})"
+log_msg "开始卸载 MiProxy (模式: ${DATA_ACTION})"
 
 # 停止服务
 if [ -f "${PID_FILE}" ]; then
@@ -27,8 +28,8 @@ if [ -f "${PID_FILE}" ]; then
 fi
 
 # 根据卸载模式处理数据
-case "${UNINSTALL_MODE}" in
-    delete_all)
+case "${DATA_ACTION}" in
+    delete)
         log_msg "执行完全删除模式..."
         
         # 删除所有数据
@@ -37,7 +38,7 @@ case "${UNINSTALL_MODE}" in
         
         log_msg "已删除全部数据"
         ;;
-    keep_data|*)
+    keep|*)
         log_msg "执行保留数据模式..."
         
         # 只删除运行时数据，保留配置

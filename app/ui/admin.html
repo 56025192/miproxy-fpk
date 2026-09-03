@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiProxy 管理面板</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 { font-size: 20px; }
+    .header .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #dc3545;
+    }
+    .status-dot.running { background: #22c55e; }
+    .container {
+      max-width: 800px;
+      margin: 30px auto;
+      padding: 0 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #eee;
+      font-weight: 600;
+      color: #333;
+    }
+    .card-body { padding: 20px; }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group:last-child { margin-bottom: 0; }
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #333;
+    }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .form-group textarea { min-height: 120px; resize: vertical; }
+    .form-group .help {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    .btn {
+      padding: 10px 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    .btn:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+    .btn-secondary {
+      background: #6c757d;
+      margin-left: 10px;
+    }
+    .btn-secondary:hover {
+      background: #5a6268;
+      box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+    }
+    .message {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .message.error { background: #fee2e2; color: #dc3545; display: block; }
+    .message.success { background: #dcfce7; color: #16a34a; display: block; }
+    .config-preview {
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #e0e0e0;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 12px 24px;
+      border: none;
+      background: none;
+      font-size: 14px;
+      color: #666;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.3s;
+    }
+    .tab:hover { color: #667eea; }
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>MiProxy 管理面板</h1>
+    <div class="status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">检测中...</span>
+    </div>
+  </div>
+  
+  <div class="container">
+    <div id="message" class="message"></div>
+    
+    <div class="tabs">
+      <button class="tab active" data-tab="basic">基础配置</button>
+      <button class="tab" data-tab="sub">订阅配置</button>
+      <button class="tab" data-tab="advance">高级配置</button>
+      <button class="tab" data-tab="preview">配置预览</button>
+    </div>
+    
+    <form id="configForm">
+      <!-- 基础配置 -->
+      <div class="tab-content active" id="tab-basic">
+        <div class="card">
+          <div class="card-header">代理设置</div>
+          <div class="card-body">
+            <div class="form-group">
+              <label>HTTP 端口</label>
+              <input type="number" id="httpPort" value="7890" min="1" max="65535">
+              <p class="help">mihomo 混合代理端口</p>
+            </div>
+            <div class="form-group">
+              <label>API 端口</label>
+              <input type="number" id="apiPort" value="9090" min="1" max="65535">
+              <p class="help">RESTful API 监听端口</p>
+            </div>
+            <div class="form-group">
+              <label>面板密钥</label>
+              <input type="password" id="secret" placeholder="留空则不启用">
+              <p class="help">用于认证控制面板 API</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 订阅配置 -->
+      <div class="tab-content" id="tab-sub">
+        <div class="card">
+          <div class="card-header">订阅设置</div>
+          <div class="card-body">
+            <div class="form-group">
+              <label>订阅类型</label>
+              <select id="subType">
+                <option value="none">不使用订阅</option>
+                <option value="remote">远程订阅 URL</option>
+                <option value="local">本地订阅文件</option>
+              </select>
+            </div>
+            <div class="form-group" id="groupSubUrl" style="display:none;">
+              <label>订阅 URL</label>
+              <input type="text" id="subUrl" placeholder="https://example.com/api/v1/client/subscribe?token=xxx">
+            </div>
+            <div class="form-group" id="groupSubPath" style="display:none;">
+              <label>本地订阅文件</label>
+              <input type="text" id="subPath" placeholder="/vol1/@appshare/miproxy/sub.yaml">
+            </div>
+            <div class="form-group">
+              <label>自动刷新间隔</label>
+              <select id="refreshInterval">
+                <option value="0">关闭</option>
+                <option value="1">每小时</option>
+                <option value="6">每 6 小时</option>
+                <option value="12">每 12 小时</option>
+                <option value="24">每 24 小时</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 高级配置 -->
+      <div class="tab-content" id="tab-advance">
+        <div class="card">
+          <div class="card-header">模式设置</div>
+          <div class="card-body">
+            <div class="form-group">
+              <label>代理模式</label>
+              <select id="mode">
+                <option value="rule">规则模式</option>
+                <option value="global">全局模式</option>
+                <option value="direct">直连模式</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>允许局域网连接</label>
+              <select id="allowLan">
+                <option value="true">是</option>
+                <option value="false">否</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>日志级别</label>
+              <select id="logLevel">
+                <option value="info">info</option>
+                <option value="warn">warn</option>
+                <option value="error">error</option>
+                <option value="silent">silent</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 配置预览 -->
+      <div class="tab-content" id="tab-preview">
+        <div class="card">
+          <div class="card-header">config.yaml 预览</div>
+          <div class="card-body">
+            <div class="config-preview" id="configPreview">加载中...</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="actions">
+        <button type="button" class="btn btn-secondary" id="reloadBtn">重新加载</button>
+        <button type="submit" class="btn" id="saveBtn">保存配置</button>
+      </div>
+    </form>
+  </div>
+  
+  <script>
+    // Tab 切换
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', function() {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        this.classList.add('active');
+        document.getElementById('tab-' + this.dataset.tab).classList.add('active');
+        if (this.dataset.tab === 'preview') loadConfigPreview();
+      });
+    });
+    
+    // 订阅类型切换
+    document.getElementById('subType').addEventListener('change', function() {
+      document.getElementById('groupSubUrl').style.display = this.value === 'remote' ? 'block' : 'none';
+      document.getElementById('groupSubPath').style.display = this.value === 'local' ? 'block' : 'none';
+    });
+    
+    // 加载当前配置
+    async function loadConfig() {
+      try {
+        const resp = await fetch('/config/current');
+        if (!resp.ok) throw new Error('获取配置失败');
+        const config = await resp.json();
+        
+        document.getElementById('httpPort').value = config.httpPort || 7890;
+        document.getElementById('apiPort').value = config.apiPort || 9090;
+        document.getElementById('secret').value = config.secret || '';
+        document.getElementById('subType').value = config.subType || 'none';
+        document.getElementById('subUrl').value = config.subUrl || '';
+        document.getElementById('subPath').value = config.subPath || '';
+        document.getElementById('refreshInterval').value = config.refreshInterval || '0';
+        document.getElementById('mode').value = config.mode || 'rule';
+        document.getElementById('allowLan').value = config.allowLan !== false;
+        document.getElementById('logLevel').value = config.logLevel || 'info';
+        
+        // 触发订阅类型切换
+        document.getElementById('subType').dispatchEvent(new Event('change'));
+      } catch (e) {
+        showMessage('error', '加载配置失败: ' + e.message);
+      }
+    }
+    
+    // 加载配置预览
+    async function loadConfigPreview() {
+      try {
+        const resp = await fetch('/config/preview');
+        if (!resp.ok) throw new Error('获取预览失败');
+        const yaml = await resp.text();
+        document.getElementById('configPreview').textContent = yaml;
+      } catch (e) {
+        document.getElementById('configPreview').textContent = '加载失败: ' + e.message;
+      }
+    }
+    
+    // 保存配置
+    document.getElementById('configForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      btn.textContent = '保存中...';
+      
+      const data = {
+        httpPort: parseInt(document.getElementById('httpPort').value),
+        apiPort: parseInt(document.getElementById('apiPort').value),
+        secret: document.getElementById('secret').value,
+        subType: document.getElementById('subType').value,
+        subUrl: document.getElementById('subUrl').value,
+        subPath: document.getElementById('subPath').value,
+        refreshInterval: parseInt(document.getElementById('refreshInterval').value),
+        mode: document.getElementById('mode').value,
+        allowLan: document.getElementById('allowLan').value === 'true',
+        logLevel: document.getElementById('logLevel').value
+      };
+      
+      try {
+        const resp = await fetch('/config/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        
+        if (resp.ok) {
+          showMessage('success', '配置已保存，mihomo 将在配置写入完成后重启');
+          setTimeout(() => loadConfigPreview(), 1000);
+        } else {
+          const err = await resp.text();
+          showMessage('error', '保存失败: ' + err);
+        }
+      } catch (e) {
+        showMessage('error', '保存失败: ' + e.message);
+      }
+      
+      btn.disabled = false;
+      btn.textContent = '保存配置';
+    });
+    
+    // 重新加载
+    document.getElementById('reloadBtn').addEventListener('click', loadConfig);
+    
+    // 检查服务状态
+    async function checkStatus() {
+      try {
+        const resp = await fetch('/status');
+        if (resp.ok) {
+          const data = await resp.json();
+          const dot = document.getElementById('statusDot');
+          const text = document.getElementById('statusText');
+          if (data.running) {
+            dot.classList.add('running');
+            text.textContent = '运行中 (PID: ' + data.pid + ')';
+          } else {
+            dot.classList.remove('running');
+            text.textContent = '未运行';
+          }
+        }
+      } catch (e) {
+        document.getElementById('statusText').textContent = '检测失败';
+      }
+    }
+    
+    function showMessage(type, text) {
+      const msg = document.getElementById('message');
+      msg.className = 'message ' + type;
+      msg.textContent = text;
+    }
+    
+    // 初始化
+    loadConfig();
+    checkStatus();
+    setInterval(checkStatus, 5000);
+  </script>
+</body>
+</html>

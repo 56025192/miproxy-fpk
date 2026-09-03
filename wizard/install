@@ -1,59 +1,116 @@
 [
   {
-    "stepTitle": "关于 MiProxy",
+    "stepTitle": "欢迎安装 MiProxy",
     "items": [
       {
-        "type": "title",
-        "title": "MiProxy - 轻量级代理工具"
-      },
-      {
-        "type": "desc",
-        "desc": "MiProxy 是基于 mihomo（MetaCubeX/mihomo）核心开发的轻量级代理工具，提供简单易用的 Web 管理界面。"
-      },
-      {
-        "type": "subtitle",
-        "subtitle": "主要功能特性"
-      },
-      {
-        "type": "list",
-        "list": [
-          "🌐 全局代理与规则代理模式",
-          "📋 Clash/Mihomo 配置兼容",
-          "🔄 远程订阅自动更新",
-          "📊 实时流量统计",
-          "🔒 支持流量加密传输",
-          "🌍 多节点管理",
-          "📱 跨平台支持（fnOS/Linux）"
-        ]
-      },
-      {
-        "type": "subtitle",
-        "subtitle": "使用场景"
-      },
-      {
-        "type": "list",
-        "list": [
-          "🌍 跨境网络访问",
-          "🔒 保护隐私安全",
-          "📡 自建代理服务",
-          "📺 流媒体解锁"
-        ]
-      },
-      {
-        "type": "subtitle",
-        "subtitle": "安装前置条件"
-      },
-      {
-        "type": "list",
-        "list": [
-          "✅ fnOS 系统已安装并正常运行",
-          "✅ 网络连接正常",
-          "✅ 建议保留 7890 端口（如需自定义请在配置中修改）"
-        ]
-      },
+        "type": "tips",
+        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用<br><br>✨ 功能特性：<br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：mihomo proxy-providers 内置自动刷新<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br><br>💡 安装后可随时通过控制面板修改配置"
+      }
+    ]
+  },
+  {
+    "stepTitle": "代理设置",
+    "items": [
       {
         "type": "tips",
-        "helpText": "点击「开始安装」即表示您同意使用本软件遵守当地法律法规"
+        "helpText": "设置代理连接的用户验证信息（可选）。留空则不启用验证。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_proxy_user",
+        "label": "代理用户名",
+        "initValue": "",
+        "placeholder": "留空则不启用",
+        "rules": []
+      },
+      {
+        "type": "text",
+        "field": "wizard_proxy_pass",
+        "label": "代理密码",
+        "initValue": "",
+        "placeholder": "留空则不启用",
+        "rules": []
+      },
+      {
+        "type": "text",
+        "field": "wizard_secret",
+        "label": "面板密钥",
+        "initValue": "",
+        "placeholder": "留空则不启用（建议设置）",
+        "rules": []
+      }
+    ]
+  },
+  {
+    "stepTitle": "TUN 设置",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "TUN 功能可将系统所有流量通过代理转发（全局代理）。<br><br>⚠️ 注意：<br>• TUN 需要 mihomo 以特殊方式运行，fnOS 手动安装的 mihomo 可能无法启用此功能<br>• 如果启用后服务异常，请关闭 TUN 重试<br>• 普通代理模式（无需 TUN）已能满足大多数使用场景"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_tun_enable",
+        "label": "启用 TUN",
+        "defaultValue": "false",
+        "options": [
+          {"value": "false", "label": "关闭（推荐）"},
+          {"value": "true", "label": "启用（需要内核支持）"}
+        ],
+        "rules": [{"required": true, "message": "请选择 TUN 状态"}]
+      }
+    ]
+  },
+  {
+    "stepTitle": "订阅管理",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "配置代理节点订阅，支持远程订阅 URL 和本地订阅文件两种方式。<br><br>📡 远程订阅：输入订阅链接地址，mihomo 自动获取并解码<br>📁 本地订阅：指定本地 YAML 配置文件路径<br>⏱️ 自动刷新：由 mihomo proxy-providers 内置 interval 功能实现<br><br>💡 可跳过安装，后续在控制面板中配置。"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_sub_type",
+        "label": "订阅类型",
+        "defaultValue": "none",
+        "options": [
+          {"value": "none", "label": "暂不配置（推荐）"},
+          {"value": "remote", "label": "远程订阅 URL"},
+          {"value": "local", "label": "本地订阅文件"}
+        ],
+        "rules": [{"required": true, "message": "请选择订阅类型"}]
+      },
+      {
+        "type": "text",
+        "field": "wizard_sub_url",
+        "label": "订阅 URL",
+        "initValue": "",
+        "placeholder": "https://example.com/api/v1/client/subscribe?token=xxx",
+        "rules": [],
+        "visibleIf": {"field": "wizard_sub_type", "value": "remote"}
+      },
+      {
+        "type": "text",
+        "field": "wizard_sub_path",
+        "label": "本地订阅文件",
+        "initValue": "/vol1/@appshare/miproxy/sub.yaml",
+        "placeholder": "/vol1/@appshare/miproxy/sub.yaml",
+        "rules": [],
+        "visibleIf": {"field": "wizard_sub_type", "value": "local"}
+      },
+      {
+        "type": "radio",
+        "field": "wizard_refresh_interval",
+        "label": "自动刷新",
+        "defaultValue": "0",
+        "options": [
+          {"value": "0", "label": "关闭自动刷新"},
+          {"value": "1", "label": "每 1 小时"},
+          {"value": "6", "label": "每 6 小时"},
+          {"value": "12", "label": "每 12 小时"},
+          {"value": "24", "label": "每 24 小时"}
+        ],
+        "rules": [{"required": true, "message": "请选择刷新间隔"}]
       }
     ]
   }

@@ -1,0 +1,11 @@
+[
+  {
+    "stepTitle": "卸载",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "确认卸载 MiProxy"
+      }
+    ]
+  }
+]

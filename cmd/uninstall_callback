@@ -1,32 +1,54 @@
 #!/bin/bash
+# MiProxy 卸载回调脚本
 
-# MiProxy 卸载后回调脚本
-# 职责：清理残留文件（默认不保留数据）
+TRIM_PKGVAR="${TRIM_PKGVAR:-/mnt/sysdata/appdata/miproxy}"
+TRIM_PKGETC="${TRIM_PKGETC:-/mnt/sysdata/config/miproxy}"
+PID_FILE="${TRIM_PKGVAR}/app.pid"
+CONFIG_FILE="${TRIM_PKGVAR}/config.yaml"
+SETTINGS_FILE="${TRIM_PKGETC}/settings.conf"
 
-DATA_ACTION="${wizard_data_action:-delete}"
-LOG_FILE="/tmp/miproxy_uninstall.log"
-exec >>"${LOG_FILE}" 2>&1
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
 
-echo ""
-echo "$(date '+%Y-%m-%d %H:%M:%S') uninstall_callback: 用户选择=${DATA_ACTION}"
+# 获取卸载模式
+UNINSTALL_MODE=$(grep '^uninstall_mode=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2 | tr -d ' \n')
 
-# 收集需要清理的路径
-CLEAN_PATHS=(
-    "${TRIM_PKGVAR}"
-    "${TRIM_PKGETC}"
-)
+log_msg "开始卸载 MiProxy (模式: ${UNINSTALL_MODE:-keep_data})"
 
-if [ "${DATA_ACTION}" = "delete" ]; then
-    echo "删除模式：清理所有数据..."
-    for path in "${CLEAN_PATHS[@]}"; do
-        [ -e "${path}" ] && rm -rf "${path}" 2>/dev/null && echo "已删除: ${path}"
-    done
-    
-    # 清理进程
-    pkill -KILL -x mihomo 2>/dev/null || true
-    echo "删除完成"
-else
-    echo "保留模式：不清理数据"
+# 停止服务
+if [ -f "${PID_FILE}" ]; then
+    pid=$(cat "${PID_FILE}" 2>/dev/null)
+    if [ -n "${pid}" ]; then
+        kill "${pid}" 2>/dev/null
+        log_msg "已停止服务 (PID: ${pid})"
+    fi
+    rm -f "${PID_FILE}"
 fi
 
+# 根据卸载模式处理数据
+case "${UNINSTALL_MODE}" in
+    delete_all)
+        log_msg "执行完全删除模式..."
+        
+        # 删除所有数据
+        rm -rf "${TRIM_PKGVAR}" 2>/dev/null
+        rm -rf "${TRIM_PKGETC}" 2>/dev/null
+        
+        log_msg "已删除全部数据"
+        ;;
+    keep_data|*)
+        log_msg "执行保留数据模式..."
+        
+        # 只删除运行时数据，保留配置
+        rm -f "${PID_FILE}" 2>/dev/null
+        rm -f "${CONFIG_FILE}" 2>/dev/null
+        rm -f "${TRIM_PKGVAR}/info.log" 2>/dev/null
+        
+        # 保留 settings.conf 和 ui 目录
+        log_msg "配置文件已保留在 ${TRIM_PKGETC}"
+        ;;
+esac
+
+log_msg "卸载完成"
 exit 0

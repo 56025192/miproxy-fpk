@@ -1,10 +1,59 @@
 [
   {
-    "stepTitle": "欢迎",
+    "stepTitle": "关于 MiProxy",
     "items": [
       {
+        "type": "title",
+        "title": "MiProxy - 轻量级代理工具"
+      },
+      {
+        "type": "desc",
+        "desc": "MiProxy 是基于 mihomo（MetaCubeX/mihomo）核心开发的轻量级代理工具，提供简单易用的 Web 管理界面。"
+      },
+      {
+        "type": "subtitle",
+        "subtitle": "主要功能特性"
+      },
+      {
+        "type": "list",
+        "list": [
+          "🌐 全局代理与规则代理模式",
+          "📋 Clash/Mihomo 配置兼容",
+          "🔄 远程订阅自动更新",
+          "📊 实时流量统计",
+          "🔒 支持流量加密传输",
+          "🌍 多节点管理",
+          "📱 跨平台支持（fnOS/Linux）"
+        ]
+      },
+      {
+        "type": "subtitle",
+        "subtitle": "使用场景"
+      },
+      {
+        "type": "list",
+        "list": [
+          "🌍 跨境网络访问",
+          "🔒 保护隐私安全",
+          "📡 自建代理服务",
+          "📺 流媒体解锁"
+        ]
+      },
+      {
+        "type": "subtitle",
+        "subtitle": "安装前置条件"
+      },
+      {
+        "type": "list",
+        "list": [
+          "✅ fnOS 系统已安装并正常运行",
+          "✅ 网络连接正常",
+          "✅ 建议保留 7890 端口（如需自定义请在配置中修改）"
+        ]
+      },
+      {
         "type": "tips",
-        "helpText": "MiProxy - 基于 mihomo 代理核心"
+        "helpText": "点击「开始安装」即表示您同意使用本软件遵守当地法律法规"
       }
     ]
   }

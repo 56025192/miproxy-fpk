@@ -1,55 +1,38 @@
 #!/bin/bash
-# MiProxy 卸载回调脚本
+#
+# MiProxy 卸载回调
+# 功能：根据 wizard_data_action 决定是否保留数据
+#
 
-TRIM_PKGVAR="${TRIM_PKGVAR:-/mnt/sysdata/appdata/miproxy}"
-TRIM_PKGETC="${TRIM_PKGETC:-/mnt/sysdata/config/miproxy}"
-PID_FILE="${TRIM_PKGVAR}/app.pid"
-CONFIG_FILE="${TRIM_PKGVAR}/config.yaml"
-SETTINGS_FILE="${TRIM_PKGETC}/settings.conf"
+set +e
 
-log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
+# 路径配置
+VAR_DIR="${TRIM_PKGVAR:-/var/packages/miproxy/var}"
 
-# 获取卸载模式 (data_action: keep=保留数据, delete=删除全部)
-DATA_ACTION=$(grep '^data_action=' "${SETTINGS_FILE}" 2>/dev/null | cut -d= -f2 | tr -d ' \n')
-DATA_ACTION="${DATA_ACTION:-keep}"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 开始卸载..."
 
-log_msg "开始卸载 MiProxy (模式: ${DATA_ACTION})"
+# 获取卸载选项（默认保留数据）
+DATA_ACTION="${wizard_data_action:-keep}"
 
-# 停止服务
-if [ -f "${PID_FILE}" ]; then
-    pid=$(cat "${PID_FILE}" 2>/dev/null)
-    if [ -n "${pid}" ]; then
-        kill "${pid}" 2>/dev/null
-        log_msg "已停止服务 (PID: ${pid})"
+if [ "$DATA_ACTION" = "delete" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 删除全部数据"
+    
+    # 删除所有数据目录内容
+    if [ -d "$VAR_DIR" ]; then
+        rm -rf "$VAR_DIR"/*
     fi
-    rm -f "${PID_FILE}"
+    
+    # 尝试删除数据备份目录（如果存在）
+    for backup_dir in /var/packages/miproxy/var_backup /tmp/miproxy_backup; do
+        if [ -d "$backup_dir" ]; then
+            rm -rf "$backup_dir" 2>/dev/null || true
+        fi
+    done
+    
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 所有数据已删除"
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 保留数据（下次安装可继续使用）"
 fi
 
-# 根据卸载模式处理数据
-case "${DATA_ACTION}" in
-    delete)
-        log_msg "执行完全删除模式..."
-        
-        # 删除所有数据
-        rm -rf "${TRIM_PKGVAR}" 2>/dev/null
-        rm -rf "${TRIM_PKGETC}" 2>/dev/null
-        
-        log_msg "已删除全部数据"
-        ;;
-    keep|*)
-        log_msg "执行保留数据模式..."
-        
-        # 只删除运行时数据，保留配置
-        rm -f "${PID_FILE}" 2>/dev/null
-        rm -f "${CONFIG_FILE}" 2>/dev/null
-        rm -f "${TRIM_PKGVAR}/info.log" 2>/dev/null
-        
-        # 保留 settings.conf 和 ui 目录
-        log_msg "配置文件已保留在 ${TRIM_PKGETC}"
-        ;;
-esac
-
-log_msg "卸载完成"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 卸载完成"
 exit 0

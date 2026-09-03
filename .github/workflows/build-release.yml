@@ -129,19 +129,28 @@ jobs:
         id: build-x86
         run: |
           echo "🔨 开始打包 x86_64..."
-          echo "=== 检查目录结构 ==="
-          ls -la
+          
+          echo "=== 目录结构 ==="
+          find . -type f | head -50
           echo ""
           echo "=== 检查 manifest ==="
           cat manifest
           echo ""
+          echo "=== 检查 cmd/ ==="
+          ls -la cmd/
+          echo ""
+          echo "=== 检查 wizard/ ==="
+          ls -la wizard/
+          echo ""
+          echo "=== 检查 ICON ==="
+          ls -la ICON*.PNG
+          echo ""
+          echo "=== fnpack 版本 ==="
+          /tmp/fnpack --version 2>&1 || echo "无法获取版本"
+          echo ""
           echo "=== 运行 fnpack ==="
           /tmp/fnpack build --directory . 2>&1 || {
             echo "fnpack 退出码: $?"
-            echo "=== 目录内容 ==="
-            ls -la
-            echo "=== 尝试详细模式 ==="
-            /tmp/fnpack build --directory . --verbose 2>&1 || true
             exit 1
           }
           
@@ -215,19 +224,28 @@ jobs:
         id: build-arm
         run: |
           echo "🔨 开始打包 ARM64..."
-          echo "=== 检查目录结构 ==="
-          ls -la
+          
+          echo "=== 目录结构 ==="
+          find . -type f | head -50
           echo ""
           echo "=== 检查 manifest ==="
           cat manifest
           echo ""
+          echo "=== 检查 cmd/ ==="
+          ls -la cmd/
+          echo ""
+          echo "=== 检查 wizard/ ==="
+          ls -la wizard/
+          echo ""
+          echo "=== 检查 ICON ==="
+          ls -la ICON*.PNG
+          echo ""
+          echo "=== fnpack 版本 ==="
+          /tmp/fnpack --version 2>&1 || echo "无法获取版本"
+          echo ""
           echo "=== 运行 fnpack ==="
           /tmp/fnpack build --directory . 2>&1 || {
             echo "fnpack 退出码: $?"
-            echo "=== 目录内容 ==="
-            ls -la
-            echo "=== 尝试详细模式 ==="
-            /tmp/fnpack build --directory . --verbose 2>&1 || true
             exit 1
           }
           

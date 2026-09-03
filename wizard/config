@@ -1,0 +1,88 @@
+[
+  {
+    "stepTitle": "代理设置",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "设置 HTTP/SOCKS5/Mixed 代理连接的用户名和密码。留空则不启用验证。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_proxy_user",
+        "label": "代理用户名",
+        "initValue": "",
+        "placeholder": "留空则不启用代理验证"
+      },
+      {
+        "type": "text",
+        "field": "wizard_proxy_pass",
+        "label": "代理密码",
+        "initValue": "",
+        "placeholder": "留空则不启用代理验证"
+      }
+    ]
+  },
+  {
+    "stepTitle": "控制面板密钥",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "设置控制面板（Dashboard）的访问密钥。用于 API 调用时的身份验证。"
+      },
+      {
+        "type": "text",
+        "field": "wizard_secret",
+        "label": "面板密钥",
+        "initValue": "",
+        "placeholder": "留空则不启用密钥验证"
+      }
+    ]
+  },
+  {
+    "stepTitle": "订阅管理",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "配置代理节点订阅，支持远程订阅 URL 和本地订阅文件两种方式。"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_sub_type",
+        "label": "订阅类型",
+        "defaultValue": "none",
+        "options": [
+          {"value": "none", "label": "暂不配置"},
+          {"value": "remote", "label": "远程订阅 URL"},
+          {"value": "local", "label": "本地订阅文件"}
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_sub_url",
+        "label": "远程订阅 URL",
+        "initValue": "",
+        "placeholder": "https://example.com/api/v1/client/subscribe?token=xxx"
+      },
+      {
+        "type": "text",
+        "field": "wizard_sub_path",
+        "label": "本地订阅文件路径",
+        "initValue": "/vol1/@appshare/miproxy/sub.yaml",
+        "placeholder": "/vol1/@appshare/miproxy/sub.yaml"
+      },
+      {
+        "type": "radio",
+        "field": "wizard_refresh_interval",
+        "label": "自动刷新订阅",
+        "defaultValue": "6",
+        "options": [
+          {"value": "0", "label": "禁用"},
+          {"value": "1", "label": "每 1 小时"},
+          {"value": "6", "label": "每 6 小时"},
+          {"value": "12", "label": "每 12 小时"},
+          {"value": "24", "label": "每 24 小时"}
+        ]
+      }
+    ]
+  }
+]

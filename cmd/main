@@ -4,7 +4,7 @@
 # 功能：启动、停止、重启 mihomo 服务
 #
 
-set -e
+set +e
 
 # 路径配置
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,8 +18,11 @@ CONF_DIR="${VAR_DIR}/config"
 ARCH=$(uname -m)
 if [ "$ARCH" = "x86_64" ]; then
     MIHOMO_BIN="${APP_DIR}/app/server/x86_64/mihomo"
-else
+elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
     MIHOMO_BIN="${APP_DIR}/app/server/arm64/mihomo"
+else
+    log "警告：不支持的架构 $ARCH，尝试使用 x86_64"
+    MIHOMO_BIN="${APP_DIR}/app/server/x86_64/mihomo"
 fi
 
 # 配置文件路径
@@ -43,6 +46,31 @@ is_running() {
     return 1
 }
 
+# 创建默认配置
+create_default_config() {
+    mkdir -p "${CONF_DIR}" 2>/dev/null
+    cat > "$MIHOMO_CONFIG" << 'CONFIG'
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: info
+external-controller: 0.0.0.0:9090
+
+dns:
+  enable: true
+  enhanced-mode: fake-ip
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+
+proxies: []
+proxy-groups: []
+rules: []
+CONFIG
+    log "默认配置文件已创建: $MIHOMO_CONFIG"
+}
+
 # 启动服务
 start() {
     log "正在启动 MiProxy 服务..."
@@ -55,13 +83,12 @@ start() {
     
     # 检查配置文件
     if [ ! -f "$MIHOMO_CONFIG" ]; then
-        log "警告：配置文件不存在，创建默认配置"
-        mkdir -p "${CONF_DIR}"
+        log "配置文件不存在，创建默认配置"
         create_default_config
     fi
     
     # 创建日志目录
-    mkdir -p "${LOG_DIR}"
+    mkdir -p "${LOG_DIR}" 2>/dev/null
     
     # 启动 mihomo
     log "启动 mihomo..."
@@ -76,7 +103,7 @@ start() {
         log "MiProxy 服务启动成功 (PID: $pid)"
         return 0
     else
-        log "错误：MiProxy 服务启动失败"
+        log "警告：MiProxy 服务启动失败，请查看日志 ${LOG_DIR}/mihomo.log"
         return 1
     fi
 }
@@ -106,32 +133,6 @@ restart() {
     stop
     sleep 1
     start
-}
-
-# 创建默认配置
-create_default_config() {
-    cat > "$MIHOMO_CONFIG" << 'CONFIG'
-port: 7890
-socks-port: 7891
-allow-lan: true
-mode: rule
-log-level: info
-external-controller: 0.0.0.0:9090
-secret: ''
-
-dns:
-  enable: true
-  listen: 0.0.0.0:53
-  enhanced-mode: fake-ip
-  nameserver:
-    - 223.5.5.5
-    - 119.29.29.29
-
-proxies: []
-proxy-groups: []
-rules: []
-CONFIG
-    log "默认配置文件已创建: $MIHOMO_CONFIG"
 }
 
 # 处理命令

@@ -70,8 +70,16 @@ do_refresh() {
                 log_msg "订阅下载成功: ${size} bytes"
                 
                 # 触发 mihomo 重启以应用新配置
-                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-                bash "${SCRIPT_DIR}/main" restart >> "${DEBUG_LOG}" 2>&1
+                # 使用固定路径（兼容不同调用场景）
+                local main_script="${TRIM_APPDEST}/cmd/main"
+                if [ ! -f "${main_script}" ]; then
+                    local script_dir
+                    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)"
+                    if [ -n "${script_dir}" ] && [ -f "${script_dir}/main" ]; then
+                        main_script="${script_dir}/main"
+                    fi
+                fi
+                bash "${main_script}" restart >> "${DEBUG_LOG}" 2>&1
                 log_msg "mihomo 已重启以应用新订阅"
                 rm -f "${LOCK_FILE}"
                 return 0
@@ -119,3 +127,4 @@ trap 'log_msg "收到退出信号，清理锁文件"; rm -f "${LOCK_FILE}"; exit
 
 # 启动主循环
 main_loop
+

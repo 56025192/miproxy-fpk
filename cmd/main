@@ -91,11 +91,24 @@ start_refresh_daemon() {
     
     # 启动守护进程
     log_msg "启动订阅刷新守护进程 (间隔: ${refresh_interval} 小时)..."
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # 使用固定路径调用 refresh_sub（兼容不同调用场景）
+    local refresh_script="${TRIM_APPDEST}/cmd/refresh_sub"
+    
+    # 如果固定路径不存在，尝试使用 BASH_SOURCE（作为备用）
+    if [ ! -f "${refresh_script}" ]; then
+        local script_dir
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)"
+        if [ -n "${script_dir}" ] && [ -f "${script_dir}/refresh_sub" ]; then
+            refresh_script="${script_dir}/refresh_sub"
+        else
+            log_msg "错误: 无法找到 refresh_sub 脚本"
+            return 1
+        fi
+    fi
     
     # 后台运行守护进程
-    nohup bash "${script_dir}/refresh_sub" >> "${LOG_FILE}" 2>&1 &
+    nohup bash "${refresh_script}" >> "${LOG_FILE}" 2>&1 &
     local new_pid=$!
     echo "${new_pid}" > "${REFRESH_PID_FILE}"
     
@@ -235,3 +248,4 @@ status)
     exit 1
     ;;
 esac
+

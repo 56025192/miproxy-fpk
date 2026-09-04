@@ -1,0 +1,72 @@
+#!/bin/bash
+DEBUG_LOG="${TRIM_PKGVAR}/refresh_sub.log"
+LOCK_FILE="${TRIM_PKGVAR}/refresh_sub.lock"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${DEBUG_LOG}"
+}
+
+find_script() {
+    local name="$1"
+    for p in "/var/packages/miproxy/cmd/${name}" "${TRIM_APPDEST}/cmd/${name}" "${TRIM_APPDEST}/${name}"; do
+        [ -f "${p}" ] && echo "${p}" && return
+    done
+    local dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+    [ -n "${dir}" ] && [ -f "${dir}/${name}" ] && echo "${dir}/${name}"
+}
+
+check_should_run() {
+    [ ! -f "${TRIM_PKGETC}/settings.conf" ] && return 1
+    local sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    local sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    local refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    [ "${sub_type}" = "remote" ] && [ -n "${sub_url}" ] && [ "${refresh_interval}" -gt 0 ] 2>/dev/null
+}
+
+get_interval_seconds() {
+    local refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    echo $((refresh_interval * 3600))
+}
+
+do_refresh() {
+    [ -f "${LOCK_FILE}" ] && log_msg "上次刷新尚未完成，跳过" && return 0
+    touch "${LOCK_FILE}"
+    
+    local sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    local sub_cache_path="${TRIM_PKGVAR}/proxy_providers/subscription.yaml"
+    
+    [ -z "${sub_url}" ] && log_msg "订阅 URL 为空" && rm -f "${LOCK_FILE}" && return 1
+    
+    log_msg "开始刷新订阅: ${sub_url}"
+    
+    if curl -fsSL --connect-timeout 15 --max-time 60 "${sub_url}" -o "${sub_cache_path}.tmp" 2>>"${DEBUG_LOG}"; then
+        if [ -s "${sub_cache_path}.tmp" ] && grep -qE "^[[:space:]]*proxies:|^[[:space:]]*proxy-providers:" "${sub_cache_path}.tmp" 2>/dev/null; then
+            mv "${sub_cache_path}.tmp" "${sub_cache_path}"
+            log_msg "订阅下载成功: $(stat -c%s "${sub_cache_path}" 2>/dev/null || wc -c < "${sub_cache_path}") bytes"
+            
+            local ms=$(find_script "main")
+            [ -n "${ms}" ] && [ -f "${ms}" ] && bash "${ms}" restart >> "${DEBUG_LOG}" 2>&1 && log_msg "mihomo 已重启"
+            
+            rm -f "${LOCK_FILE}"
+            return 0
+        fi
+        log_msg "订阅文件无效"
+        rm -f "${sub_cache_path}.tmp"
+    else
+        log_msg "订阅下载失败"
+        rm -f "${sub_cache_path}.tmp"
+    fi
+    rm -f "${LOCK_FILE}"
+    return 1
+}
+
+main_loop() {
+    log_msg "refresh_sub 守护进程启动"
+    while true; do
+        check_should_run && do_refresh
+        sleep "$(get_interval_seconds)"
+    done
+}
+
+trap 'log_msg "收到退出信号"; rm -f "${LOCK_FILE}"; exit 0' TERM INT
+main_loop

@@ -1,11 +1,10 @@
 #!/bin/bash
-# MiProxy 安装后回调脚本（v7 完整字段同步版）
-# 关键修复：完整同步订阅源的所有配置字段
-# 同步字段：proxies / proxy-groups / rules / dns / hosts / bypass / proxy-providers / rule-providers 等
+# MiProxy 安装后回调脚本（v8 安全修复版）
+# 关键修复：订阅 URL 域名安全过滤 + yaml 库解析
 
 DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
 exec 2>>"${DEBUG_LOG}"
-echo "===== install_callback v7 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+echo "===== install_callback v8 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
@@ -29,14 +28,16 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG_FILE}" >> "${DEBUG_LOG}"
 }
 
-log_msg "install_callback v7 启动"
+log_msg "install_callback v8 启动"
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
 log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
 
+# 安全提取域名：只保留合法字符，防止命令注入
 SUB_DOMAIN_FILTER=""
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
+    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||' | grep -oE '^[a-zA-Z0-9][-a-zA-Z0-9.]*[a-zA-Z0-9]$' | head -1)
     [ -n "${domain}" ] && SUB_DOMAIN_FILTER="    - \"${domain}\"\n    - \"*.${domain}\"\n"
+    log_msg "  提取订阅域名: ${domain:-（提取失败）}"
 fi
 
 mkdir -p "${TARGET_DIR}" "${VAR_DIR}/proxy_providers" "${UI_TARGET}" "${TRIM_PKGETC}"
@@ -70,55 +71,40 @@ fi
 
 [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ] && cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
 
-# 完整版 yaml 块提取：支持订阅源特殊格式（proxies: 块中列表项为顶格 -）
+# YAML 块提取：使用 yaml 库解析，更健壮
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import sys
-key = sys.argv[1] + ":"
+import yaml
+
+key = sys.argv[1]
 try:
     with open(sys.argv[2], 'r', encoding='utf-8') as f:
-        lines = f.readlines()
+        data = yaml.safe_load(f)
 except:
     sys.exit(0)
-result = []
-found = False
-for line in lines:
-    stripped = line.rstrip('\n')
-    if not stripped.strip():
-        if found: result.append(line)
-        continue
-    is_top = not stripped[0].isspace()
-    if is_top:
-        if stripped.startswith(key):
-            found = True
-            result.append(line)
-        elif found:
-            # 顶格列表项属于当前块；顶格非列表项才是下一个块
-            if stripped.startswith('-'):
-                result.append(line)
-            else:
-                break
-    elif found:
-        result.append(line)
-sys.stdout.write(''.join(result))
+
+if data and key in data:
+    # 输出原始格式，保持订阅源的格式
+    print(yaml.dump(data[key], allow_unicode=True, default_flow_style=False, sort_keys=False))
 PYEOF
 }
 
-# ============ v7: 完整字段同步 ============
+# ============ v8: 完整字段同步 ============
 # 同步所有来自订阅源的配置字段
 SUB_PROXIES=""; SUB_HOSTS=""; SUB_PG=""; SUB_RULES=""; SUB_DNS=""
 SUB_BYPASS=""; SUB_PROXY_PROVIDERS=""; SUB_RULE_PROVIDERS=""; SUB_SUB_RULE=""
 SUB_TUNNELS=""; SUB_LISTENERS=""; SUB_SNIFF=""; SUB_NTP=""; SUB_SCRIPT=""
 
 if [ -f "${SUB_CACHE_PATH}" ]; then
-    # 基础字段（原有）
+    # 基础字段
     SUB_PROXIES=$(extract_yaml_block "proxies" "${SUB_CACHE_PATH}")
     SUB_HOSTS=$(extract_yaml_block "hosts" "${SUB_CACHE_PATH}")
     SUB_PG=$(extract_yaml_block "proxy-groups" "${SUB_CACHE_PATH}")
     SUB_RULES=$(extract_yaml_block "rules" "${SUB_CACHE_PATH}")
     SUB_DNS=$(extract_yaml_block "dns" "${SUB_CACHE_PATH}")
     
-    # 扩展字段（v7 新增）
+    # 扩展字段
     SUB_BYPASS=$(extract_yaml_block "bypass" "${SUB_CACHE_PATH}")
     SUB_PROXY_PROVIDERS=$(extract_yaml_block "proxy-providers" "${SUB_CACHE_PATH}")
     SUB_RULE_PROVIDERS=$(extract_yaml_block "rule-providers" "${SUB_CACHE_PATH}")
@@ -151,7 +137,7 @@ fi
 log_msg "生成 config.yaml..."
 
 {
-    echo "# MiProxy 主配置（v7：完整同步订阅源所有字段）"
+    echo "# MiProxy 主配置（v8：安全修复版）"
     echo ""
     echo "mixed-port: ${HTTP_PORT}"
     echo "allow-lan: true"
@@ -206,7 +192,7 @@ log_msg "生成 config.yaml..."
         echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
     fi
 
-    # v7 新增字段
+    # v8 扩展字段
     [ -n "${SUB_BYPASS}" ] && echo "# bypass 私有绕过列表（来自订阅源）" && echo "${SUB_BYPASS}"
     [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers 代理集合（来自订阅源）" && echo "${SUB_PROXY_PROVIDERS}"
     [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers 规则集合（来自订阅源）" && echo "${SUB_RULE_PROVIDERS}"
@@ -236,5 +222,5 @@ chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bash "${SCRIPT_DIR}/main" start 2>>"${DEBUG_LOG}" && log_msg "✅ miproxy 启动成功" || log_msg "⚠️  miproxy 启动失败"
-log_msg "===== install_callback v7 完成 ====="
+log_msg "===== install_callback v8 完成 ====="
 exit 0

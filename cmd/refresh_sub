@@ -4,6 +4,7 @@
 # 由 cmd/main 在启动时调用
 
 DEBUG_LOG="${TRIM_PKGVAR}/refresh_sub.log"
+LOCK_FILE="${TRIM_PKGVAR}/refresh_sub.lock"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${DEBUG_LOG}"
@@ -17,9 +18,9 @@ check_should_run() {
     fi
     
     local sub_type sub_url refresh_interval
-    sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
-    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
-    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
     
     # 必须是非 none 的远程订阅且 interval > 0
     [ "${sub_type}" = "remote" ] || return 1
@@ -31,18 +32,28 @@ check_should_run() {
 
 get_interval_seconds() {
     local refresh_interval
-    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
     echo $((refresh_interval * 3600))
 }
 
 # 下载订阅并触发配置更新
 do_refresh() {
+    # 检查是否已有刷新任务在执行
+    if [ -f "${LOCK_FILE}" ]; then
+        log_msg "上次刷新尚未完成，跳过此次执行"
+        return 0
+    fi
+    
+    # 创建锁文件
+    touch "${LOCK_FILE}"
+    
     local sub_url sub_cache_path
-    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
+    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
     sub_cache_path="${TRIM_PKGVAR}/proxy_providers/subscription.yaml"
     
     if [ -z "${sub_url}" ]; then
         log_msg "订阅 URL 为空，跳过刷新"
+        rm -f "${LOCK_FILE}"
         return 1
     fi
     
@@ -51,8 +62,8 @@ do_refresh() {
     # 下载新订阅
     if curl -fsSL --connect-timeout 15 --max-time 60 "${sub_url}" -o "${sub_cache_path}.tmp" 2>>"${DEBUG_LOG}"; then
         if [ -s "${sub_cache_path}.tmp" ]; then
-            # 验证文件是有效的 YAML（检查是否包含 proxies 或 proxy-providers）
-            if grep -q "^proxies:\|^proxy-providers:" "${sub_cache_path}.tmp" 2>/dev/null; then
+            # 验证文件是有效的 YAML（支持缩进格式）
+            if grep -qE "^[[:space:]]*proxies:|^[[:space:]]*proxy-providers:" "${sub_cache_path}.tmp" 2>/dev/null; then
                 mv "${sub_cache_path}.tmp" "${sub_cache_path}"
                 local size
                 size=$(stat -c%s "${sub_cache_path}" 2>/dev/null || wc -c < "${sub_cache_path}")
@@ -62,20 +73,24 @@ do_refresh() {
                 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
                 bash "${SCRIPT_DIR}/main" restart >> "${DEBUG_LOG}" 2>&1
                 log_msg "mihomo 已重启以应用新订阅"
+                rm -f "${LOCK_FILE}"
                 return 0
             else
                 log_msg "订阅文件无效（不包含 proxies 或 proxy-providers）"
                 rm -f "${sub_cache_path}.tmp"
+                rm -f "${LOCK_FILE}"
                 return 1
             fi
         else
             log_msg "订阅文件为空"
             rm -f "${sub_cache_path}.tmp"
+            rm -f "${LOCK_FILE}"
             return 1
         fi
     else
         log_msg "订阅下载失败"
         rm -f "${sub_cache_path}.tmp"
+        rm -f "${LOCK_FILE}"
         return 1
     fi
 }
@@ -100,7 +115,7 @@ main_loop() {
 }
 
 # 信号处理
-trap 'log_msg "收到退出信号，守护进程即将退出"; exit 0' TERM INT
+trap 'log_msg "收到退出信号，清理锁文件"; rm -f "${LOCK_FILE}"; exit 0' TERM INT
 
 # 启动主循环
 main_loop

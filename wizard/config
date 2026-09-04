@@ -12,7 +12,9 @@
         "label": "代理用户名",
         "initValue": "",
         "placeholder": "留空则不启用代理验证",
-        "rules": [{"min": 0, "message": ""}]
+        "rules": [
+          {"min": 0, "message": ""}
+        ]
       },
       {
         "type": "text",
@@ -20,7 +22,9 @@
         "label": "代理密码",
         "initValue": "",
         "placeholder": "留空则不启用代理验证",
-        "rules": [{"min": 0, "message": ""}]
+        "rules": [
+          {"min": 0, "message": ""}
+        ]
       }
     ]
   },
@@ -37,7 +41,9 @@
         "label": "面板密钥",
         "initValue": "",
         "placeholder": "留空则不启用密钥验证",
-        "rules": [{"min": 0, "message": ""}]
+        "rules": [
+          {"min": 0, "message": ""}
+        ]
       }
     ]
   },
@@ -57,7 +63,9 @@
           {"value": "false", "label": "关闭（推荐）"},
           {"value": "true", "label": "启用（需要内核支持）"}
         ],
-        "rules": [{"required": true, "message": "请选择 TUN 状态"}]
+        "rules": [
+          {"required": true, "message": "请选择 TUN 状态"}
+        ]
       }
     ]
   },
@@ -78,7 +86,9 @@
           {"value": "remote", "label": "远程订阅 URL"},
           {"value": "local", "label": "本地订阅文件"}
         ],
-        "rules": [{"required": true, "message": "请选择订阅类型"}]
+        "rules": [
+          {"required": true, "message": "请选择订阅类型"}
+        ]
       },
       {
         "type": "text",
@@ -86,8 +96,13 @@
         "label": "远程订阅 URL",
         "initValue": "",
         "placeholder": "https://example.com/api/v1/client/subscribe?token=xxx",
-        "rules": [{"pattern": "^https?://.*|^$", "message": "请输入正确的 URL 格式"}],
-        "visibleIf": {"field": "wizard_sub_type", "value": "remote"}
+        "rules": [
+          {"pattern": "^https?://.*|^$", "message": "请输入正确的 URL 格式"}
+        ],
+        "visibleIf": {
+          "field": "wizard_sub_type",
+          "value": "remote"
+        }
       },
       {
         "type": "text",
@@ -95,8 +110,13 @@
         "label": "本地订阅文件路径",
         "initValue": "/vol1/@appshare/miproxy/sub.yaml",
         "placeholder": "/vol1/@appshare/miproxy/sub.yaml",
-        "rules": [{"min": 0, "message": "请输入文件路径"}],
-        "visibleIf": {"field": "wizard_sub_type", "value": "local"}
+        "rules": [
+          {"min": 0, "message": "请输入文件路径"}
+        ],
+        "visibleIf": {
+          "field": "wizard_sub_type",
+          "value": "local"
+        }
       },
       {
         "type": "radio",
@@ -110,7 +130,9 @@
           {"value": "12", "label": "每 12 小时"},
           {"value": "24", "label": "每 24 小时"}
         ],
-        "rules": [{"required": true, "message": "请选择刷新间隔"}]
+        "rules": [
+          {"required": true, "message": "请选择刷新间隔"}
+        ]
       }
     ]
   },
@@ -119,7 +141,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/<br><br>📄 主配置: config.yaml<br>📄 订阅: subscription.yaml<br>📄 日志: info.log<br><br>🎯 默认打开 Zashboard 控制面板<br><br>版本: v2.6.14 | MiProxy"
+        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/<br><br>📄 主配置: config.yaml<br>📄 订阅: subscription.yaml<br>📄 日志: info.log<br><br>🎯 默认打开 Zashboard 控制面板<br><br>版本: v2.6.16 | MiProxy"
       }
     ]
   }

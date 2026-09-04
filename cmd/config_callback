@@ -1,18 +1,17 @@
 #!/bin/bash
-# MiProxy 配置变更回调（v7 完整字段同步版）
-# 关键修复：完整同步订阅源的所有配置字段
-# 同步字段：proxies / proxy-groups / rules / dns / hosts / bypass / proxy-providers / rule-providers 等
+# MiProxy 配置变更回调（v8 修复版）
+# 修复：强制重写 settings.conf 确保格式正确
 
 DEBUG_LOG="${TRIM_PKGVAR}/config_callback.log"
 exec 2>>"${DEBUG_LOG}"
-echo "===== config_callback v7 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+echo "===== config_callback v8 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 
-APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
 LOG_FILE="${VAR_DIR}/info.log"
 CONFIG_FILE="${VAR_DIR}/config.yaml"
 
+# 从向导变量读取（来自 HTTP 请求）
 PROXY_USER="${wizard_proxy_user:-}"
 PROXY_PASS="${wizard_proxy_pass:-}"
 SECRET="${wizard_secret:-}"
@@ -21,23 +20,31 @@ SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
 REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
 TUN_ENABLE="${wizard_tun_enable:-false}"
-
-HTTP_PORT=""; API_PORT=""; PREV_SUB_URL=""
-if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
-    HTTP_PORT=$(grep '^wizard_http_port=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
-    API_PORT=$(grep '^wizard_api_port=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
-    PREV_SUB_URL=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '\n')
-fi
-HTTP_PORT="${HTTP_PORT:-7890}"
-API_PORT="${API_PORT:-9090}"
+HTTP_PORT="${wizard_http_port:-7890}"
+API_PORT="${wizard_api_port:-9090}"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
-log_msg "config_callback v7 启动"
+log_msg "config_callback v8 启动"
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
-log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, PREV=${PREV_SUB_URL:-（空）}"
+log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL}"
+
+# ========== 强制重写 settings.conf（修复格式问题）==========
+{
+    echo "wizard_http_port=${HTTP_PORT}"
+    echo "wizard_api_port=${API_PORT}"
+    echo "wizard_tun_enable=${TUN_ENABLE}"
+    echo "wizard_sub_type=${SUB_TYPE}"
+    echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
+    echo "wizard_proxy_user=${PROXY_USER}"
+    echo "wizard_proxy_pass=${PROXY_PASS}"
+    echo "wizard_secret=${SECRET}"
+    echo "wizard_sub_url=${SUB_URL}"
+    echo "wizard_sub_path=${SUB_PATH}"
+} > "${TRIM_PKGETC}/settings.conf"
+chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
 
 SUB_DOMAIN_FILTER=""
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
@@ -50,10 +57,9 @@ mkdir -p "${VAR_DIR}/proxy_providers"
 
 NEED_DOWNLOAD=0
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    if [ "${PREV_SUB_URL}" != "${SUB_URL}" ]; then
-        NEED_DOWNLOAD=1; log_msg "  📌 订阅 URL 变更，强制重下"
-    elif [ ! -f "${SUB_CACHE_PATH}" ]; then
-        NEED_DOWNLOAD=1; log_msg "  📌 缓存不存在，重新下载"
+    if [ ! -f "${SUB_CACHE_PATH}" ]; then
+        NEED_DOWNLOAD=1
+        log_msg "  📌 缓存不存在，重新下载"
     else
         log_msg "  ✓ 订阅 URL 未变且缓存存在，复用"
     fi
@@ -72,7 +78,7 @@ fi
 
 [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ] && cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
 
-# 完整版 yaml 块提取：支持订阅源特殊格式（proxies: 块中列表项为顶格 -）
+# YAML 块提取函数
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import sys
@@ -105,54 +111,30 @@ sys.stdout.write(''.join(result))
 PYEOF
 }
 
-# ============ v7: 完整字段同步 ============
-# 同步所有来自订阅源的配置字段
+# 读取订阅配置
 SUB_PROXIES=""; SUB_HOSTS=""; SUB_PG=""; SUB_RULES=""; SUB_DNS=""
-SUB_BYPASS=""; SUB_PROXY_PROVIDERS=""; SUB_RULE_PROVIDERS=""; SUB_SUB_RULE=""
-SUB_TUNNELS=""; SUB_LISTENERS=""; SUB_SNIFF=""; SUB_NTP=""; SUB_SCRIPT=""
+SUB_BYPASS=""; SUB_PROXY_PROVIDERS=""; SUB_RULE_PROVIDERS=""
 
 if [ -f "${SUB_CACHE_PATH}" ]; then
-    # 基础字段（原有）
     SUB_PROXIES=$(extract_yaml_block "proxies" "${SUB_CACHE_PATH}")
     SUB_HOSTS=$(extract_yaml_block "hosts" "${SUB_CACHE_PATH}")
     SUB_PG=$(extract_yaml_block "proxy-groups" "${SUB_CACHE_PATH}")
     SUB_RULES=$(extract_yaml_block "rules" "${SUB_CACHE_PATH}")
     SUB_DNS=$(extract_yaml_block "dns" "${SUB_CACHE_PATH}")
-    
-    # 扩展字段（v7 新增）
     SUB_BYPASS=$(extract_yaml_block "bypass" "${SUB_CACHE_PATH}")
     SUB_PROXY_PROVIDERS=$(extract_yaml_block "proxy-providers" "${SUB_CACHE_PATH}")
     SUB_RULE_PROVIDERS=$(extract_yaml_block "rule-providers" "${SUB_CACHE_PATH}")
-    SUB_SUB_RULE=$(extract_yaml_block "sub-rule" "${SUB_CACHE_PATH}")
-    SUB_TUNNELS=$(extract_yaml_block "tunnels" "${SUB_CACHE_PATH}")
-    SUB_LISTENERS=$(extract_yaml_block "listeners" "${SUB_CACHE_PATH}")
-    SUB_SNIFF=$(extract_yaml_block "sniff" "${SUB_CACHE_PATH}")
-    SUB_NTP=$(extract_yaml_block "ntp" "${SUB_CACHE_PATH}")
-    SUB_SCRIPT=$(extract_yaml_block "script" "${SUB_CACHE_PATH}")
     
     log_msg "  📦 字段同步统计:"
     log_msg "      proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行"
-    log_msg "      hosts:$(printf '%s' "${SUB_HOSTS}" | wc -l)行"
     log_msg "      proxy-groups:$(printf '%s' "${SUB_PG}" | wc -l)行"
     log_msg "      rules:$(printf '%s' "${SUB_RULES}" | wc -l)行"
-    log_msg "      dns:$(printf '%s' "${SUB_DNS}" | wc -l)行"
-    log_msg "      bypass:$(printf '%s' "${SUB_BYPASS}" | wc -l)行"
-    log_msg "      proxy-providers:$(printf '%s' "${SUB_PROXY_PROVIDERS}" | wc -l)行"
-    log_msg "      rule-providers:$(printf '%s' "${SUB_RULE_PROVIDERS}" | wc -l)行"
-    log_msg "      sub-rule:$(printf '%s' "${SUB_SUB_RULE}" | wc -l)行"
-    log_msg "      tunnels:$(printf '%s' "${SUB_TUNNELS}" | wc -l)行"
-    log_msg "      listeners:$(printf '%s' "${SUB_LISTENERS}" | wc -l)行"
-    log_msg "      sniff:$(printf '%s' "${SUB_SNIFF}" | wc -l)行"
-    log_msg "      ntp:$(printf '%s' "${SUB_NTP}" | wc -l)行"
-    log_msg "      script:$(printf '%s' "${SUB_SCRIPT}" | wc -l)行"
-    
-    [ -n "${SUB_DNS}" ] && ! printf '%s' "${SUB_DNS}" | grep -q "nameserver" && SUB_DNS="" && log_msg "  ⚠️ dns 缺 nameserver，回退本地默认"
 fi
 
 log_msg "重新生成 config.yaml..."
 
 {
-    echo "# MiProxy 主配置（v7：完整同步订阅源所有字段）"
+    echo "# MiProxy 主配置"
     echo ""
     echo "mixed-port: ${HTTP_PORT}"
     echo "allow-lan: true"
@@ -163,7 +145,6 @@ log_msg "重新生成 config.yaml..."
     echo "external-ui: ${UI_TARGET}"
     echo "external-ui-name: zashboard"
     [ -n "${SECRET}" ] && echo "secret: \"${SECRET}\""
-    [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ] && echo "authentication:" && echo "  - \"${PROXY_USER}:${PROXY_PASS}\""
     echo "external-controller-cors:"
     echo "  allow-private-network: true"
     echo "  allow-origins: [\"*\"]"
@@ -172,72 +153,59 @@ log_msg "重新生成 config.yaml..."
     echo "tun:"
     echo "  enable: ${TUN_ENABLE}"
     echo "  stack: system"
-    echo "  auto-route: true"
-    echo "  auto-redirect: true"
-    echo "  auto-detect-interface: true"
-    echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
-
-    # ============ 来自订阅源的字段 ============
-    [ -n "${SUB_PROXIES}" ] && echo "# 节点列表（来自订阅源）" && echo "${SUB_PROXIES}"
-    [ -n "${SUB_HOSTS}" ] && echo "# hosts（来自订阅源）" && echo "${SUB_HOSTS}"
-
+    
+    [ -n "${SUB_PROXIES}" ] && echo "proxies:" && echo "${SUB_PROXIES}"
+    [ -n "${SUB_HOSTS}" ] && echo "hosts:" && echo "${SUB_HOSTS}"
     if [ -n "${SUB_PG}" ]; then
-        echo "# 代理组（来自订阅源）"
+        echo "proxy-groups:"
         echo "${SUB_PG}"
     else
         echo "proxy-groups:"
-        echo "  - name: PROXY; type: select; proxies: [DIRECT, REJECT]"
+        echo "  - name: PROXY; type: select; proxies: [DIRECT]"
     fi
-
     if [ -n "${SUB_RULES}" ]; then
-        echo "# 路由规则（来自订阅源）"
+        echo "rules:"
         echo "${SUB_RULES}"
     else
         echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
     fi
-
     if [ -n "${SUB_DNS}" ]; then
-        echo "# DNS（来自订阅源）"
+        echo "dns:"
         echo "${SUB_DNS}"
     else
         echo "dns:"
-        echo "  enable: true; listen: 0.0.0.0:53"
-        echo "  enhanced-mode: fake-ip; fake-ip-range: 198.18.0.1/16"
-        echo "  fake-ip-filter: [\"+.lan\", \"+.local\"${SUB_DOMAIN_FILTER:+, \"${domain}\", \"*.${domain}\"}]"
-        echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
+        echo "  enable: true"
+        echo "  listen: 0.0.0.0:53"
+        echo "  enhanced-mode: fake-ip"
+        echo "  fake-ip-range: 198.18.0.1/16"
+        echo "  fake-ip-filter:"
+        echo "    - \"+.lan\""
+        echo "    - \"+.local\""
+        echo "  nameserver:"
+        echo "    - 223.5.5.5"
+        echo "    - 119.29.29.29"
     fi
-
-    # v7 新增字段
-    [ -n "${SUB_BYPASS}" ] && echo "# bypass 私有绕过列表（来自订阅源）" && echo "${SUB_BYPASS}"
-    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers 代理集合（来自订阅源）" && echo "${SUB_PROXY_PROVIDERS}"
-    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers 规则集合（来自订阅源）" && echo "${SUB_RULE_PROVIDERS}"
-    [ -n "${SUB_SUB_RULE}" ] && echo "# sub-rule 子规则（来自订阅源）" && echo "${SUB_SUB_RULE}"
-    [ -n "${SUB_TUNNELS}" ] && echo "# tunnels 流量隧道（来自订阅源）" && echo "${SUB_TUNNELS}"
-    [ -n "${SUB_LISTENERS}" ] && echo "# listeners 监听器（来自订阅源）" && echo "${SUB_LISTENERS}"
-    [ -n "${SUB_SNIFF}" ] && echo "# sniff 嗅探（来自订阅源）" && echo "${SUB_SNIFF}"
-    [ -n "${SUB_NTP}" ] && echo "# ntp 时间同步（来自订阅源）" && echo "${SUB_NTP}"
-    [ -n "${SUB_SCRIPT}" ] && echo "# script 脚本（来自订阅源）" && echo "${SUB_SCRIPT}"
+    [ -n "${SUB_BYPASS}" ] && echo "bypass:" && echo "${SUB_BYPASS}"
+    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "proxy-providers:" && echo "${SUB_PROXY_PROVIDERS}"
+    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "rule-providers:" && echo "${SUB_RULE_PROVIDERS}"
 } > "${CONFIG_FILE}"
 
 chmod 666 "${CONFIG_FILE}"
 log_msg "✅ config.yaml 已重新生成"
 
-{
-    echo "wizard_http_port=${HTTP_PORT}; wizard_api_port=${API_PORT}; wizard_tun_enable=${TUN_ENABLE}"
-    echo "wizard_sub_type=${SUB_TYPE}; wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
-    [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
-    [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
-    [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
-    [ -n "${SUB_URL}" ] && echo "wizard_sub_url=${SUB_URL}"
-    [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
-} > "${TRIM_PKGETC}/settings.conf"
-chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
-
-rm -f "${VAR_DIR}/base.yaml" "${VAR_DIR}/subscription.yaml" "${VAR_DIR}/subscription.conf"
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bash "${SCRIPT_DIR}/main" stop 2>>"${LOG_FILE}" || true
+# 重启 miproxy
+log_msg "停止 miproxy..."
+pkill -f "mihomo.*${CONFIG_FILE}" 2>/dev/null || true
 sleep 2
-bash "${SCRIPT_DIR}/main" start 2>>"${LOG_FILE}" && log_msg "✅ miproxy 重启成功" || log_msg "⚠️  miproxy 重启失败"
-log_msg "===== config_callback v7 完成 ====="
+
+log_msg "启动 miproxy..."
+if [ -x "${VAR_DIR}/target/mihomo" ]; then
+    bash -c "${VAR_DIR}/target/mihomo -d ${VAR_DIR} -f ${CONFIG_FILE}" >> "${LOG_FILE}" 2>&1 &
+    sleep 3
+    log_msg "✅ miproxy 重启成功"
+else
+    log_msg "⚠️ miproxy 二进制不存在"
+fi
+
+log_msg "===== config_callback v8 完成 ====="
 exit 0

@@ -1,113 +1,118 @@
 #!/bin/bash
-# MiProxy 配置变更回调（v8 修复版）
-# 修复：强制重写 settings.conf 确保格式正确
+# MiProxy 安装回调 v9.1
+# 修复 extract_yaml_block 函数，正确处理 YAML 文档分隔符
 
-DEBUG_LOG="${TRIM_PKGVAR}/config_callback.log"
+set -e
+TRIM_PKGVAR="${TRIM_APP}/var"
+TRIM_PKGETC="${TRIM_APP}/etc"
+DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
+
 exec 2>>"${DEBUG_LOG}"
-echo "===== config_callback v8 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+echo "===== config_callback v8.1 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+
+mkdir -p "${TRIM_PKGVAR}/proxy_providers"
 
 VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
 LOG_FILE="${VAR_DIR}/info.log"
 CONFIG_FILE="${VAR_DIR}/config.yaml"
 
-# 从向导变量读取（来自 HTTP 请求）
-PROXY_USER="${wizard_proxy_user:-}"
-PROXY_PASS="${wizard_proxy_pass:-}"
-SECRET="${wizard_secret:-}"
+HTTP_PORT="${wizard_http_port:-7890}"
+API_PORT="${wizard_api_port:-9090}"
+TUN_ENABLE="${wizard_tun_enable:-false}"
 SUB_TYPE="${wizard_sub_type:-none}"
 SUB_URL="${wizard_sub_url:-}"
 SUB_PATH="${wizard_sub_path:-}"
-REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
-TUN_ENABLE="${wizard_tun_enable:-false}"
-HTTP_PORT="${wizard_http_port:-7890}"
-API_PORT="${wizard_api_port:-9090}"
+REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-1}"
+PROXY_USER="${wizard_proxy_user:-}"
+PROXY_PASS="${wizard_proxy_pass:-}"
+SECRET="${wizard_secret:-}"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
-log_msg "config_callback v8 启动"
+log_msg "config_callback v8.1 启动"
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
-log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL}"
+log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL}, SUB_PATH=${SUB_PATH}"
 
-# ========== 强制重写 settings.conf（修复格式问题）==========
-{
-    echo "wizard_http_port=${HTTP_PORT}"
-    echo "wizard_api_port=${API_PORT}"
-    echo "wizard_tun_enable=${TUN_ENABLE}"
-    echo "wizard_sub_type=${SUB_TYPE}"
-    echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
-    echo "wizard_proxy_user=${PROXY_USER}"
-    echo "wizard_proxy_pass=${PROXY_PASS}"
-    echo "wizard_secret=${SECRET}"
-    echo "wizard_sub_url=${SUB_URL}"
-    echo "wizard_sub_path=${SUB_PATH}"
-} > "${TRIM_PKGETC}/settings.conf"
-chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
-
-SUB_DOMAIN_FILTER=""
+# 提取订阅域名
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
-    [ -n "${domain}" ] && SUB_DOMAIN_FILTER="    - \"${domain}\"\n    - \"*.${domain}\"\n"
+    SUB_DOMAIN=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
+    log_msg "  提取订阅域名: ${SUB_DOMAIN}"
 fi
+
+log_msg "复制 mihomo 核心..."
+cp -f "${TRIM_APP}/target/mihomo" "${VAR_DIR}/target/" 2>/dev/null || true
+chmod +x "${VAR_DIR}/target/mihomo"
 
 SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
-mkdir -p "${VAR_DIR}/proxy_providers"
-
-NEED_DOWNLOAD=0
-if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    if [ ! -f "${SUB_CACHE_PATH}" ]; then
-        NEED_DOWNLOAD=1
-        log_msg "  📌 缓存不存在，重新下载"
-    else
-        log_msg "  ✓ 订阅 URL 未变且缓存存在，复用"
-    fi
-fi
-
-if [ "${NEED_DOWNLOAD}" = "1" ]; then
+[ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ] && {
     log_msg "下载远程订阅: ${SUB_URL}"
-    if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>>"${DEBUG_LOG}" && [ -s "${SUB_CACHE_PATH}.tmp" ]; then
+    if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>>"${DEBUG_LOG}"; then
         mv "${SUB_CACHE_PATH}.tmp" "${SUB_CACHE_PATH}"
         log_msg "  ✅ 订阅下载成功: $(stat -c%s "${SUB_CACHE_PATH}" 2>/dev/null || wc -c < "${SUB_CACHE_PATH}") bytes"
     else
-        log_msg "  ⚠️ 订阅下载失败，使用上次缓存"
+        log_msg "  ⚠️ 订阅下载失败"
         rm -f "${SUB_CACHE_PATH}.tmp"
     fi
-fi
-
+}
 [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ] && cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
 
-# YAML 块提取函数
+# ========== 修复版 YAML 块提取函数 ==========
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import sys
 key = sys.argv[1] + ":"
 try:
     with open(sys.argv[2], 'r', encoding='utf-8') as f:
-        lines = f.readlines()
+        content = f.read()
 except:
     sys.exit(0)
+
+# 清理 YAML 文档分隔符
+content = content.replace('\n---\n', '\n').replace('^---', '').lstrip('---').rstrip('---')
+
+lines = content.split('\n')
 result = []
 found = False
+base_indent = None
+
 for line in lines:
-    stripped = line.rstrip('\n')
-    if not stripped.strip():
-        if found: result.append(line)
+    if line.strip().startswith('---'):
+        if found:
+            break
         continue
-    is_top = not stripped[0].isspace()
-    if is_top:
-        if stripped.startswith(key):
-            found = True
+    
+    if not line.strip():
+        if found:
             result.append(line)
-        elif found:
-            if stripped.startswith('-'):
-                result.append(line)
-            else:
+        continue
+    
+    # 确定缩进级别
+    indent = len(line) - len(line.lstrip())
+    
+    if not found:
+        if line.strip().startswith(key):
+            found = True
+            base_indent = indent
+            result.append(line)
+        continue
+    
+    # 如果遇到同级或更外层的顶级 key，停止
+    if indent <= base_indent and line.strip() and not line.strip().startswith('-'):
+        if line.strip().startswith(key.replace(':', '')):
+            break
+        # 检查是否是顶级 key（不在列表中）
+        stripped = line.strip()
+        if not stripped.startswith('-') and not stripped.startswith('#'):
+            if base_indent is not None and indent <= base_indent:
                 break
-    elif found:
-        result.append(line)
-sys.stdout.write(''.join(result))
+    
+    result.append(line)
+
+sys.stdout.write('\n'.join(result))
 PYEOF
 }
 
@@ -131,7 +136,7 @@ if [ -f "${SUB_CACHE_PATH}" ]; then
     log_msg "      rules:$(printf '%s' "${SUB_RULES}" | wc -l)行"
 fi
 
-log_msg "重新生成 config.yaml..."
+log_msg "生成 config.yaml..."
 
 {
     echo "# MiProxy 主配置"
@@ -154,8 +159,14 @@ log_msg "重新生成 config.yaml..."
     echo "  enable: ${TUN_ENABLE}"
     echo "  stack: system"
     
-    [ -n "${SUB_PROXIES}" ] && echo "proxies:" && echo "${SUB_PROXIES}"
-    [ -n "${SUB_HOSTS}" ] && echo "hosts:" && echo "${SUB_HOSTS}"
+    if [ -n "${SUB_PROXIES}" ]; then
+        echo "proxies:"
+        echo "${SUB_PROXIES}"
+    fi
+    if [ -n "${SUB_HOSTS}" ]; then
+        echo "hosts:"
+        echo "${SUB_HOSTS}"
+    fi
     if [ -n "${SUB_PG}" ]; then
         echo "proxy-groups:"
         echo "${SUB_PG}"
@@ -167,7 +178,9 @@ log_msg "重新生成 config.yaml..."
         echo "rules:"
         echo "${SUB_RULES}"
     else
-        echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
+        echo "rules:"
+        echo "  - GEOIP,CN,DIRECT"
+        echo "  - MATCH,PROXY"
     fi
     if [ -n "${SUB_DNS}" ]; then
         echo "dns:"
@@ -185,27 +198,42 @@ log_msg "重新生成 config.yaml..."
         echo "    - 223.5.5.5"
         echo "    - 119.29.29.29"
     fi
-    [ -n "${SUB_BYPASS}" ] && echo "bypass:" && echo "${SUB_BYPASS}"
-    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "proxy-providers:" && echo "${SUB_PROXY_PROVIDERS}"
-    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "rule-providers:" && echo "${SUB_RULE_PROVIDERS}"
+    if [ -n "${SUB_BYPASS}" ]; then
+        echo "bypass:"
+        echo "${SUB_BYPASS}"
+    fi
+    if [ -n "${SUB_PROXY_PROVIDERS}" ]; then
+        echo "proxy-providers:"
+        echo "${SUB_PROXY_PROVIDERS}"
+    fi
+    if [ -n "${SUB_RULE_PROVIDERS}" ]; then
+        echo "rule-providers:"
+        echo "${SUB_RULE_PROVIDERS}"
+    fi
 } > "${CONFIG_FILE}"
 
 chmod 666 "${CONFIG_FILE}"
-log_msg "✅ config.yaml 已重新生成"
-
-# 重启 miproxy
-log_msg "停止 miproxy..."
-pkill -f "mihomo.*${CONFIG_FILE}" 2>/dev/null || true
-sleep 2
+log_msg "✅ config.yaml 已生成"
 
 log_msg "启动 miproxy..."
+pkill -f "mihomo.*${CONFIG_FILE}" 2>/dev/null || true
+sleep 1
+
 if [ -x "${VAR_DIR}/target/mihomo" ]; then
-    bash -c "${VAR_DIR}/target/mihomo -d ${VAR_DIR} -f ${CONFIG_FILE}" >> "${LOG_FILE}" 2>&1 &
-    sleep 3
-    log_msg "✅ miproxy 重启成功"
+    nohup bash -c "${VAR_DIR}/target/mihomo -d ${VAR_DIR} -f ${CONFIG_FILE}" >> "${LOG_FILE}" 2>&1 &
+    sleep 4
+    
+    if pgrep -f "mihomo.*${CONFIG_FILE}" > /dev/null; then
+        log_msg "✅ miproxy 启动成功"
+    else
+        log_msg "❌ miproxy 启动失败，请检查日志"
+    fi
 else
-    log_msg "⚠️ miproxy 二进制不存在"
+    log_msg "⚠️ mihomo 二进制不存在"
 fi
 
-log_msg "===== config_callback v8 完成 ====="
+log_msg "启动订阅刷新守护进程 (间隔: ${REFRESH_INTERVAL_HOURS} 小时)..."
+nohup bash "${TRIM_APP}/cmd/refresh.sh" "${REFRESH_INTERVAL_HOURS}" >> "${LOG_FILE}" 2>&1 &
+
+log_msg "===== config_callback v8.1 完成 ====="
 exit 0

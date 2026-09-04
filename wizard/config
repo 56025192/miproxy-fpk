@@ -141,7 +141,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/<br><br>📄 主配置: config.yaml<br>📄 订阅: subscription.yaml<br>📄 日志: info.log<br><br>🎯 默认打开 Zashboard 控制面板<br><br>版本: v2.6.16 | MiProxy"
+        "helpText": "📂 配置文件目录: /vol1/@appdata/miproxy/<br><br>📄 主配置: config.yaml<br>📄 订阅: subscription.yaml<br>📄 日志: info.log<br><br>🎯 默认打开 Zashboard 控制面板<br><br>版本: v2.6.18 | MiProxy"
       }
     ]
   }

@@ -1,4 +1,5 @@
 #!/bin/bash
-# 配置变更前回调
-# 现在配置变更通过 WebUI 直接处理，此脚本保留为空实现
+
+### This script is called before the user change environment variables in application setting page.
+
 exit 0

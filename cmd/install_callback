@@ -1,10 +1,10 @@
 #!/bin/bash
-# MiProxy 安装后回调脚本（v8 安全修复版）
-# 关键修复：订阅 URL 域名安全过滤 + yaml 库解析
+# MiProxy 安装后回调脚本（v9 安全修复版 + 保留原始 YAML 格式）
+# 修复：域名安全过滤 + 恢复原始 YAML 解析逻辑（保持订阅源格式）
 
 DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
 exec 2>>"${DEBUG_LOG}"
-echo "===== install_callback v8 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
+echo "===== install_callback v9 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
@@ -28,16 +28,19 @@ log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG_FILE}" >> "${DEBUG_LOG}"
 }
 
-log_msg "install_callback v8 启动"
+log_msg "install_callback v9 启动"
 log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
 log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
 
-# 安全提取域名：只保留合法字符，防止命令注入
+# 安全提取订阅域名（v9 新增）
 SUB_DOMAIN_FILTER=""
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||' | grep -oE '^[a-zA-Z0-9][-a-zA-Z0-9.]*[a-zA-Z0-9]$' | head -1)
-    [ -n "${domain}" ] && SUB_DOMAIN_FILTER="    - \"${domain}\"\n    - \"*.${domain}\"\n"
-    log_msg "  提取订阅域名: ${domain:-（提取失败）}"
+    # 使用 grep -oE 只提取合法域名格式，防止命令注入
+    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||' | grep -oE '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$' | head -1)
+    if [ -n "${domain}" ]; then
+        log_msg "  提取订阅域名: ${domain}"
+        SUB_DOMAIN_FILTER="    - \"${domain}\"\n    - \"*.${domain}\""
+    fi
 fi
 
 mkdir -p "${TARGET_DIR}" "${VAR_DIR}/proxy_providers" "${UI_TARGET}" "${TRIM_PKGETC}"
@@ -71,27 +74,40 @@ fi
 
 [ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ] && cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
 
-# YAML 块提取：使用 yaml 库解析，更健壮
+# YAML 块提取（v7 原始逻辑，保留订阅源格式）
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import sys
-import yaml
-
-key = sys.argv[1]
+key = sys.argv[1] + ":"
 try:
     with open(sys.argv[2], 'r', encoding='utf-8') as f:
-        data = yaml.safe_load(f)
+        lines = f.readlines()
 except:
     sys.exit(0)
-
-if data and key in data:
-    # 输出原始格式，保持订阅源的格式
-    print(yaml.dump(data[key], allow_unicode=True, default_flow_style=False, sort_keys=False))
+result = []
+found = False
+for line in lines:
+    stripped = line.rstrip('\n')
+    if not stripped.strip():
+        if found: result.append(line)
+        continue
+    is_top = not stripped[0].isspace()
+    if is_top:
+        if stripped.startswith(key):
+            found = True
+            result.append(line)
+        elif found:
+            if stripped.startswith('-'):
+                result.append(line)
+            else:
+                break
+    elif found:
+        result.append(line)
+sys.stdout.write(''.join(result))
 PYEOF
 }
 
-# ============ v8: 完整字段同步 ============
-# 同步所有来自订阅源的配置字段
+# ============ v9: 完整字段同步 ============
 SUB_PROXIES=""; SUB_HOSTS=""; SUB_PG=""; SUB_RULES=""; SUB_DNS=""
 SUB_BYPASS=""; SUB_PROXY_PROVIDERS=""; SUB_RULE_PROVIDERS=""; SUB_SUB_RULE=""
 SUB_TUNNELS=""; SUB_LISTENERS=""; SUB_SNIFF=""; SUB_NTP=""; SUB_SCRIPT=""
@@ -124,12 +140,6 @@ if [ -f "${SUB_CACHE_PATH}" ]; then
     log_msg "      bypass:$(printf '%s' "${SUB_BYPASS}" | wc -l)行"
     log_msg "      proxy-providers:$(printf '%s' "${SUB_PROXY_PROVIDERS}" | wc -l)行"
     log_msg "      rule-providers:$(printf '%s' "${SUB_RULE_PROVIDERS}" | wc -l)行"
-    log_msg "      sub-rule:$(printf '%s' "${SUB_SUB_RULE}" | wc -l)行"
-    log_msg "      tunnels:$(printf '%s' "${SUB_TUNNELS}" | wc -l)行"
-    log_msg "      listeners:$(printf '%s' "${SUB_LISTENERS}" | wc -l)行"
-    log_msg "      sniff:$(printf '%s' "${SUB_SNIFF}" | wc -l)行"
-    log_msg "      ntp:$(printf '%s' "${SUB_NTP}" | wc -l)行"
-    log_msg "      script:$(printf '%s' "${SUB_SCRIPT}" | wc -l)行"
     
     [ -n "${SUB_DNS}" ] && ! printf '%s' "${SUB_DNS}" | grep -q "nameserver" && SUB_DNS="" && log_msg "  ⚠️ dns 缺 nameserver，回退本地默认"
 fi
@@ -137,7 +147,7 @@ fi
 log_msg "生成 config.yaml..."
 
 {
-    echo "# MiProxy 主配置（v8：安全修复版）"
+    echo "# MiProxy 主配置（v9：安全修复版）"
     echo ""
     echo "mixed-port: ${HTTP_PORT}"
     echo "allow-lan: true"
@@ -162,7 +172,7 @@ log_msg "生成 config.yaml..."
     echo "  auto-detect-interface: true"
     echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
 
-    # ============ 来自订阅源的字段 ============
+    # 来自订阅源的字段
     [ -n "${SUB_PROXIES}" ] && echo "# 节点列表（来自订阅源）" && echo "${SUB_PROXIES}"
     [ -n "${SUB_HOSTS}" ] && echo "# hosts（来自订阅源）" && echo "${SUB_HOSTS}"
 
@@ -186,22 +196,35 @@ log_msg "生成 config.yaml..."
         echo "${SUB_DNS}"
     else
         echo "dns:"
-        echo "  enable: true; listen: 0.0.0.0:53"
-        echo "  enhanced-mode: fake-ip; fake-ip-range: 198.18.0.1/16"
-        echo "  fake-ip-filter: [\"+.lan\", \"+.local\"${SUB_DOMAIN_FILTER:+, \"${domain}\", \"*.${domain}\"}]"
-        echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
+        echo "  enable: true"
+        echo "  listen: 0.0.0.0:53"
+        echo "  enhanced-mode: fake-ip"
+        echo "  fake-ip-range: 198.18.0.1/16"
+        if [ -n "${SUB_DOMAIN_FILTER}" ]; then
+            echo "  fake-ip-filter:"
+            echo -e "    - \"+.lan\""
+            echo -e "    - \"+.local\""
+            echo -e "${SUB_DOMAIN_FILTER}"
+        else
+            echo "  fake-ip-filter:"
+            echo "    - \"+.lan\""
+            echo "    - \"+.local\""
+        fi
+        echo "  nameserver:"
+        echo "    - 223.5.5.5"
+        echo "    - 119.29.29.29"
+        echo "    - 8.8.8.8"
     fi
 
-    # v8 扩展字段
-    [ -n "${SUB_BYPASS}" ] && echo "# bypass 私有绕过列表（来自订阅源）" && echo "${SUB_BYPASS}"
-    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers 代理集合（来自订阅源）" && echo "${SUB_PROXY_PROVIDERS}"
-    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers 规则集合（来自订阅源）" && echo "${SUB_RULE_PROVIDERS}"
-    [ -n "${SUB_SUB_RULE}" ] && echo "# sub-rule 子规则（来自订阅源）" && echo "${SUB_SUB_RULE}"
-    [ -n "${SUB_TUNNELS}" ] && echo "# tunnels 流量隧道（来自订阅源）" && echo "${SUB_TUNNELS}"
-    [ -n "${SUB_LISTENERS}" ] && echo "# listeners 监听器（来自订阅源）" && echo "${SUB_LISTENERS}"
-    [ -n "${SUB_SNIFF}" ] && echo "# sniff 嗅探（来自订阅源）" && echo "${SUB_SNIFF}"
-    [ -n "${SUB_NTP}" ] && echo "# ntp 时间同步（来自订阅源）" && echo "${SUB_NTP}"
-    [ -n "${SUB_SCRIPT}" ] && echo "# script 脚本（来自订阅源）" && echo "${SUB_SCRIPT}"
+    [ -n "${SUB_BYPASS}" ] && echo "# bypass 私有绕过列表" && echo "${SUB_BYPASS}"
+    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers 代理集合" && echo "${SUB_PROXY_PROVIDERS}"
+    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers 规则集合" && echo "${SUB_RULE_PROVIDERS}"
+    [ -n "${SUB_SUB_RULE}" ] && echo "# sub-rule 子规则" && echo "${SUB_SUB_RULE}"
+    [ -n "${SUB_TUNNELS}" ] && echo "# tunnels 流量隧道" && echo "${SUB_TUNNELS}"
+    [ -n "${SUB_LISTENERS}" ] && echo "# listeners 监听器" && echo "${SUB_LISTENERS}"
+    [ -n "${SUB_SNIFF}" ] && echo "# sniff 嗅探" && echo "${SUB_SNIFF}"
+    [ -n "${SUB_NTP}" ] && echo "# ntp 时间同步" && echo "${SUB_NTP}"
+    [ -n "${SUB_SCRIPT}" ] && echo "# script 脚本" && echo "${SUB_SCRIPT}"
 } > "${CONFIG_FILE}"
 
 chmod 666 "${CONFIG_FILE}"
@@ -210,8 +233,11 @@ log_msg "✅ config.yaml 已生成"
 rm -f "${VAR_DIR}/base.yaml" "${VAR_DIR}/subscription.yaml" "${VAR_DIR}/subscription.conf"
 
 {
-    echo "wizard_http_port=${HTTP_PORT}; wizard_api_port=${API_PORT}; wizard_tun_enable=${TUN_ENABLE}"
-    echo "wizard_sub_type=${SUB_TYPE}; wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
+    echo "wizard_http_port=${HTTP_PORT}"
+    echo "wizard_api_port=${API_PORT}"
+    echo "wizard_tun_enable=${TUN_ENABLE}"
+    echo "wizard_sub_type=${SUB_TYPE}"
+    echo "wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
     [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
     [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
     [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
@@ -222,5 +248,5 @@ chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bash "${SCRIPT_DIR}/main" start 2>>"${DEBUG_LOG}" && log_msg "✅ miproxy 启动成功" || log_msg "⚠️  miproxy 启动失败"
-log_msg "===== install_callback v8 完成 ====="
+log_msg "===== install_callback v9 完成 ====="
 exit 0

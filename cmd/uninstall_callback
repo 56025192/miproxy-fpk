@@ -1,46 +1,57 @@
 #!/bin/bash
 #
-# MiProxy 卸载回调
+# MiProxy 卸载回调（v2 修复版）
 # 功能：根据 wizard_data_action 决定是否保留数据
+# 修复：使用正确的环境变量路径 ${TRIM_PKGVAR} 和 ${TRIM_PKGETC}
 #
 
 set +e
 
-# 路径配置
-VAR_DIR="/var/packages/miproxy/var"
+# 使用 fnOS 环境变量（而非硬编码路径）
+VAR_DIR="${TRIM_PKGVAR}"
+ETC_DIR="${TRIM_PKGETC}"
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 开始卸载..."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 开始卸载..."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] 数据目录: ${VAR_DIR}"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] 配置目录: ${ETC_DIR}"
 
 # 获取卸载选项（默认保留数据）
 DATA_ACTION="${wizard_data_action:-keep}"
-CONFIRM_DELETE="${wizard_confirm_delete:-}"
 
 if [ "$DATA_ACTION" = "delete" ]; then
-    # 如果选择删除，需要确认用户输入了 DELETE
-    if [ -n "$CONFIRM_DELETE" ] && [ "$CONFIRM_DELETE" = "DELETE" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 确认删除全部数据"
-        
-        # 删除主数据目录
-        if [ -d "$VAR_DIR" ]; then
-            rm -rf "$VAR_DIR"/* 2>/dev/null || true
-            rm -rf "$VAR_DIR"/.* 2>/dev/null || true
-        fi
-        
-        # 删除备份目录（如果存在）
-        rm -rf /var/packages/miproxy/var_backup 2>/dev/null || true
-        rm -rf /tmp/miproxy_backup 2>/dev/null || true
-        
-        # 删除整个 VAR_DIR 目录（如果为空）
-        rmdir "$VAR_DIR" 2>/dev/null || true
-        
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 所有数据已删除"
-    else
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 未确认删除，保留数据"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 如需删除，请输入 DELETE 确认"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 选择删除全部数据"
+    
+    # 停止 miproxy 服务
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
+    
+    # 删除用户数据目录（包含配置、日志、订阅等）
+    if [ -d "${VAR_DIR}" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 删除用户数据目录: ${VAR_DIR}"
+        rm -rf "${VAR_DIR:?}"/* 2>/dev/null || true
+        rm -rf "${VAR_DIR:?}"/.* 2>/dev/null || true
     fi
+    
+    # 删除配置目录
+    if [ -d "${ETC_DIR}" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 删除配置目录: ${ETC_DIR}"
+        rm -rf "${ETC_DIR:?}"/* 2>/dev/null || true
+        rm -rf "${ETC_DIR:?}"/.* 2>/dev/null || true
+    fi
+    
+    # 删除 PID 文件（防止残留进程）
+    rm -f /var/packages/miproxy/var/app.pid 2>/dev/null || true
+    rm -f /var/packages/miproxy/var/refresh_sub.pid 2>/dev/null || true
+    rm -f /var/packages/miproxy/var/refresh_sub.lock 2>/dev/null || true
+    
+    # 删除备份目录
+    rm -rf /var/packages/miproxy/var_backup 2>/dev/null || true
+    rm -rf /tmp/miproxy_backup 2>/dev/null || true
+    
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 所有数据已删除"
 else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 保留数据（下次安装可继续使用）"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 保留数据（下次安装可继续使用）"
 fi
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback: 卸载完成"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 卸载完成"
 exit 0

@@ -40,12 +40,12 @@ if [ "$DATA_ACTION" = "delete" ]; then
     fi
     
     # 删除 PID 文件（防止残留进程）
-    rm -f /var/packages/miproxy/var/app.pid 2>/dev/null || true
-    rm -f /var/packages/miproxy/var/refresh_sub.pid 2>/dev/null || true
-    rm -f /var/packages/miproxy/var/refresh_sub.lock 2>/dev/null || true
+    rm -f ${TRIM_PKGVAR}/app.pid 2>/dev/null || true
+    rm -f ${TRIM_PKGVAR}/refresh_sub.pid 2>/dev/null || true
+    rm -f ${TRIM_PKGVAR}/refresh_sub.lock 2>/dev/null || true
     
     # 删除备份目录
-    rm -rf /var/packages/miproxy/var_backup 2>/dev/null || true
+    rm -rf ${TRIM_PKGVAR}_backup 2>/dev/null || true
     rm -rf /tmp/miproxy_backup 2>/dev/null || true
     
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 所有数据已删除"

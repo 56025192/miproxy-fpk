@@ -1,4 +1,5 @@
 #!/bin/bash
-# 安装前初始化脚本
-# 注意：现在使用 WebUI 安装流程，此脚本仅保留为空实现
+
+### This script is called before the user installs the application.
+
 exit 0

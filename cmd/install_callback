@@ -4,11 +4,10 @@
 # 功能：安装完成后初始化必要文件和目录
 #
 
-set -e
+set +e
 
 # 路径配置
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="$(dirname "$SCRIPT_DIR")"
 VAR_DIR="${TRIM_PKGVAR:-/var/packages/miproxy/var}"
 LOG_DIR="${VAR_DIR}/logs"
 DATA_DIR="${VAR_DIR}/data"
@@ -17,9 +16,9 @@ CONF_DIR="${VAR_DIR}/config"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 开始初始化..."
 
 # 创建必要的目录
-mkdir -p "$LOG_DIR"
-mkdir -p "$DATA_DIR"
-mkdir -p "$CONF_DIR"
+mkdir -p "$LOG_DIR" 2>/dev/null
+mkdir -p "$DATA_DIR" 2>/dev/null
+mkdir -p "$CONF_DIR" 2>/dev/null
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 目录创建完成"
 
@@ -32,11 +31,9 @@ allow-lan: true
 mode: rule
 log-level: info
 external-controller: 0.0.0.0:9090
-secret: ''
 
 dns:
   enable: true
-  listen: 0.0.0.0:53
   enhanced-mode: fake-ip
   nameserver:
     - 223.5.5.5
@@ -49,9 +46,15 @@ CONFIG
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 默认配置已创建"
 fi
 
-# 启动服务
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 启动服务..."
-bash "${SCRIPT_DIR}/main" start
+# 尝试启动服务（启动失败不阻塞安装）
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 尝试启动服务..."
+bash "${SCRIPT_DIR}/main" start 2>/dev/null
+RC=$?
+if [ $RC -eq 0 ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 服务启动成功"
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 服务启动失败（rc=$RC），可通过 WebUI 配置后启动"
+fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] install_callback: 安装完成"
 exit 0

@@ -3,8 +3,8 @@
 # 修复 extract_yaml_block 函数，正确处理 YAML 文档分隔符
 
 set -e
-TRIM_PKGVAR="${TRIM_APP}/var"
-TRIM_PKGETC="${TRIM_APP}/etc"
+TRIM_PKGVAR="${TRIM_APPDEST}/var"
+TRIM_PKGETC="${TRIM_APPDEST}/etc"
 DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
 
 exec 2>>"${DEBUG_LOG}"
@@ -44,7 +44,7 @@ if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
 fi
 
 log_msg "复制 mihomo 核心..."
-cp -f "${TRIM_APP}/target/mihomo" "${VAR_DIR}/target/" 2>/dev/null || true
+cp -f "${TRIM_APPDEST}/server/mihomo" "${VAR_DIR}/target/" 2>/dev/null || true
 chmod +x "${VAR_DIR}/target/mihomo"
 
 SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"

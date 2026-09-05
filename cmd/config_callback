@@ -3,8 +3,6 @@
 # 修复 extract_yaml_block 函数，正确处理 YAML 文档分隔符
 
 set -e
-TRIM_PKGVAR="${TRIM_APPDEST}/var"
-TRIM_PKGETC="${TRIM_APPDEST}/etc"
 DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
 
 exec 2>>"${DEBUG_LOG}"
@@ -242,3 +240,4 @@ nohup bash "${TRIM_APPDEST}/cmd/refresh_sub" "${REFRESH_INTERVAL_HOURS}" >> "${L
 
 log_msg "===== config_callback v8.1 完成 ====="
 exit 0
+

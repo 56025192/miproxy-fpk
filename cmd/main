@@ -136,12 +136,14 @@ start_refresh_daemon() {
     
     # 如果脚本不存在，从安装目录复制
     if [ ! -f "${refresh_sub_script}" ]; then
-        if [ -f "${TRIM_APPDEST}/cmd/refresh_sub" ]; then
-            cp -f "${TRIM_APPDEST}/cmd/refresh_sub" "${refresh_sub_script}"
+        # cmd 目录在 /var/apps/miproxy/cmd/，不是 TRIM_APPDEST/cmd/
+        local install_cmd="/var/apps/miproxy/cmd/refresh_sub"
+        if [ -f "${install_cmd}" ]; then
+            cp -f "${install_cmd}" "${refresh_sub_script}"
             chmod +x "${refresh_sub_script}"
             log_msg "已复制 refresh_sub 到 ${refresh_sub_script}"
         else
-            log_msg "错误: 无法找到 refresh_sub 脚本"
+            log_msg "错误: 无法找到 refresh_sub 脚本 (检查 ${install_cmd})"
             return 1
         fi
     fi

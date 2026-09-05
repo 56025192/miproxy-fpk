@@ -1,4 +1,7 @@
 #!/bin/bash
+TRIM_PKGVAR="${TRIM_APPDEST}/var"
+TRIM_PKGETC="${TRIM_APPDEST}/etc"
+
 # MiProxy 订阅刷新守护进程 v2
 # 直接管理 mihomo 进程，不依赖外部脚本路径
 
@@ -68,15 +71,19 @@ restart_mihomo() {
 
 check_should_run() {
     [ ! -f "${TRIM_PKGETC}/settings.conf" ] && return 1
-    local sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
-    local sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
-    local refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    local sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
+')
+    local sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
+')
+    local refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
+')
     
     [ "${sub_type}" = "remote" ] && [ -n "${sub_url}" ] && [ "${refresh_interval}" -gt 0 ] 2>/dev/null
 }
 
 get_interval_seconds() {
-    local refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    local refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
+')
     echo $((refresh_interval * 3600))
 }
 
@@ -84,7 +91,8 @@ do_refresh() {
     [ -f "${LOCK_FILE}" ] && log_msg "上次刷新尚未完成，跳过" && return 0
     touch "${LOCK_FILE}"
     
-    local sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    local sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
+')
     local sub_cache_path="${TRIM_PKGVAR}/proxy_providers/subscription.yaml"
     
     [ -z "${sub_url}" ] && log_msg "订阅 URL 为空" && rm -f "${LOCK_FILE}" && return 1

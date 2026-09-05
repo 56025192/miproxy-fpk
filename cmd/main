@@ -133,7 +133,7 @@ start_refresh_daemon() {
     local refresh_sub=$(find_script "refresh_sub")
     
     # 后台运行守护进程
-    nohup bash "${refresh_sub}" >> "${LOG_FILE}" 2>&1 &
+    nohup env TRIM_PKGVAR="${TRIM_PKGVAR}" TRIM_PKGETC="${TRIM_PKGETC}" TRIM_APPDEST="${TRIM_APPDEST}" bash "${refresh_sub}" >> "${LOG_FILE}" 2>&1 &
     local new_pid=$!
     echo "${new_pid}" > "${REFRESH_PID_FILE}"
     

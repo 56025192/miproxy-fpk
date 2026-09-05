@@ -1,6 +1,4 @@
 #!/bin/bash
-TRIM_PKGVAR="${TRIM_APPDEST}/var"
-TRIM_PKGETC="${TRIM_APPDEST}/etc"
 
 # MiProxy 订阅刷新守护进程 v2
 # 直接管理 mihomo 进程，不依赖外部脚本路径
@@ -138,3 +136,4 @@ main_loop() {
 
 trap 'log_msg "收到退出信号"; rm -f "${LOCK_FILE}"; exit 0' TERM INT
 main_loop
+

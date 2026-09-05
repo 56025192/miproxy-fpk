@@ -44,7 +44,7 @@ if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
 fi
 
 log_msg "复制 mihomo 核心..."
-cp -f "${TRIM_APPDEST}/server/mihomo" "${VAR_DIR}/target/" 2>/dev/null || true
+cp -f "${TRIM_APPDEST}/app/server/mihomo" "${VAR_DIR}/target/" 2>/dev/null || true
 chmod +x "${VAR_DIR}/target/mihomo"
 
 SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"

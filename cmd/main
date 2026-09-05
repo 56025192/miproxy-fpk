@@ -52,6 +52,11 @@ is_running() {
 # 查找脚本位置（支持多种安装路径）
 find_script() {
     local name="$1"
+    # 尝试 TRIM_PKGVAR 目录（应用数据目录）
+    if [ -f "${TRIM_PKGVAR}/cmd/${name}" ]; then
+        echo "${TRIM_PKGVAR}/cmd/${name}"
+        return 0
+    fi
     # 尝试标准安装路径
     for p in "/var/packages/miproxy/cmd/${name}" "${TRIM_APPDEST}/cmd/${name}" "${TRIM_APPDEST}/${name}"; do
         if [ -f "${p}" ]; then
@@ -60,7 +65,7 @@ find_script() {
         fi
     done
     # 尝试从已知的 cmd 目录
-    for p in "/var/packages/miproxy/cmd" "${TRIM_APPDEST}/cmd"; do
+    for p in "/var/packages/miproxy/cmd" "${TRIM_APPDEST}/cmd" "${TRIM_PKGVAR}/cmd"; do
         if [ -d "${p}" ] && [ -f "${p}/${name}" ]; then
             echo "${p}/${name}"
             return 0

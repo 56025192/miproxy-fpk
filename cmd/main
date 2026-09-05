@@ -130,10 +130,24 @@ start_refresh_daemon() {
     
     # 启动守护进程
     log_msg "启动订阅刷新守护进程 (间隔: ${refresh_interval} 小时)..."
-    local refresh_sub=$(find_script "refresh_sub")
+    
+    # refresh_sub 脚本位置（与核心文件同目录）
+    local refresh_sub_script="${TRIM_PKGVAR}/refresh_sub"
+    
+    # 如果脚本不存在，从安装目录复制
+    if [ ! -f "${refresh_sub_script}" ]; then
+        if [ -f "${TRIM_APPDEST}/cmd/refresh_sub" ]; then
+            cp -f "${TRIM_APPDEST}/cmd/refresh_sub" "${refresh_sub_script}"
+            chmod +x "${refresh_sub_script}"
+            log_msg "已复制 refresh_sub 到 ${refresh_sub_script}"
+        else
+            log_msg "错误: 无法找到 refresh_sub 脚本"
+            return 1
+        fi
+    fi
     
     # 后台运行守护进程
-    nohup env TRIM_PKGVAR="${TRIM_PKGVAR}" TRIM_PKGETC="${TRIM_PKGETC}" TRIM_APPDEST="${TRIM_APPDEST}" bash "${refresh_sub}" >> "${LOG_FILE}" 2>&1 &
+    nohup env TRIM_PKGVAR="${TRIM_PKGVAR}" TRIM_PKGETC="${TRIM_PKGETC}" TRIM_APPDEST="${TRIM_APPDEST}" bash "${refresh_sub_script}" >> "${LOG_FILE}" 2>&1 &
     local new_pid=$!
     echo "${new_pid}" > "${REFRESH_PID_FILE}"
     

@@ -1,111 +1,158 @@
 #!/bin/bash
-# MiProxy 订阅刷新守护进程
-# 定时检查并刷新远程订阅，确保节点列表保持最新
-# 由 cmd/main 在启动时调用
+# MiProxy 订阅刷新守护进程 v2
+# 直接使用环境变量，不依赖脚本位置
+# 脚本位置: ${TRIM_PKGVAR}/refresh_sub
 
 DEBUG_LOG="${TRIM_PKGVAR}/refresh_sub.log"
+PID_FILE="${TRIM_PKGVAR}/app.pid"
+MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
+MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
+MIHOMO_DIR="${TRIM_PKGVAR}"
+LOCK_FILE="${TRIM_PKGVAR}/refresh_sub.lock"
+REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_sub.pid"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${DEBUG_LOG}"
 }
 
+# 检查 mihomo 是否运行
+is_mihomo_running() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null
+    fi
+}
+
+# 重启 mihomo
+restart_mihomo() {
+    log_msg "重启 mihomo..."
+    
+    # 停止
+    if [ -f "${PID_FILE}" ]; then
+        local pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if [ -n "${pid}" ]; then
+            kill -TERM "${pid}" 2>/dev/null || true
+            sleep 2
+            kill -KILL "${pid}" 2>/dev/null || true
+        fi
+        rm -f "${PID_FILE}"
+    fi
+    
+    # 启动
+    bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> "${DEBUG_LOG}" 2>&1 &
+    local new_pid=$!
+    echo "${new_pid}" > "${PID_FILE}"
+    sleep 2
+    
+    if kill -0 "${new_pid}" 2>/dev/null; then
+        log_msg "mihomo 重启成功 (PID: ${new_pid})"
+        return 0
+    else
+        log_msg "mihomo 重启失败"
+        rm -f "${PID_FILE}"
+        return 1
+    fi
+}
+
 # 检查是否需要运行
 check_should_run() {
-    # 读取配置
     if [ ! -f "${TRIM_PKGETC}/settings.conf" ]; then
         return 1
     fi
     
     local sub_type sub_url refresh_interval
-    sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '
-')
-    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '
-')
-    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '
-')
+    sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r')
+    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r')
+    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r')
     
-    # 必须是非 none 的远程订阅且 interval > 0
-    [ "${sub_type}" = "remote" ] || return 1
-    [ -n "${sub_url}" ] || return 1
-    [ "${refresh_interval}" -gt 0 ] 2>/dev/null || return 1
-    
-    return 0
+    [ "${sub_type}" = "remote" ] && [ -n "${sub_url}" ] && [ "${refresh_interval}" -gt 0 ] 2>/dev/null
 }
 
+# 获取刷新间隔（秒）
 get_interval_seconds() {
     local refresh_interval
-    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '
-')
+    refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r')
     echo $((refresh_interval * 3600))
 }
 
-# 下载订阅并触发配置更新
+# 执行订阅刷新
 do_refresh() {
+    # 加锁防止并发
+    if [ -f "${LOCK_FILE}" ]; then
+        log_msg "上次刷新尚未完成，跳过"
+        return 0
+    fi
+    touch "${LOCK_FILE}"
+    
     local sub_url sub_cache_path
-    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" | cut -d= -f2- | tr -d '
-')
+    sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n\r')
     sub_cache_path="${TRIM_PKGVAR}/proxy_providers/subscription.yaml"
     
     if [ -z "${sub_url}" ]; then
-        log_msg "订阅 URL 为空，跳过刷新"
+        log_msg "订阅 URL 为空"
+        rm -f "${LOCK_FILE}"
         return 1
     fi
     
     log_msg "开始刷新订阅: ${sub_url}"
     
-    # 下载新订阅
+    # 下载订阅
     if curl -fsSL --connect-timeout 15 --max-time 60 "${sub_url}" -o "${sub_cache_path}.tmp" 2>>"${DEBUG_LOG}"; then
         if [ -s "${sub_cache_path}.tmp" ]; then
-            # 验证文件是有效的 YAML（检查是否包含 proxies 或 proxy-providers）
-            if grep -q "^proxies:\|^proxy-providers:" "${sub_cache_path}.tmp" 2>/dev/null; then
+            # 验证 YAML 格式
+            if grep -qE "^proxies:|^proxy-providers:" "${sub_cache_path}.tmp" 2>/dev/null; then
                 mv "${sub_cache_path}.tmp" "${sub_cache_path}"
                 local size
                 size=$(stat -c%s "${sub_cache_path}" 2>/dev/null || wc -c < "${sub_cache_path}")
                 log_msg "订阅下载成功: ${size} bytes"
                 
-                # 触发 mihomo 重启以应用新配置
-                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-                bash "${SCRIPT_DIR}/main" restart >> "${DEBUG_LOG}" 2>&1
+                # 重启 mihomo
+                restart_mihomo
                 log_msg "mihomo 已重启以应用新订阅"
+                
+                rm -f "${LOCK_FILE}"
                 return 0
             else
                 log_msg "订阅文件无效（不包含 proxies 或 proxy-providers）"
-                rm -f "${sub_cache_path}.tmp"
-                return 1
             fi
         else
             log_msg "订阅文件为空"
-            rm -f "${sub_cache_path}.tmp"
-            return 1
         fi
+        rm -f "${sub_cache_path}.tmp"
     else
         log_msg "订阅下载失败"
         rm -f "${sub_cache_path}.tmp"
-        return 1
     fi
+    
+    rm -f "${LOCK_FILE}"
+    return 1
 }
 
 # 主循环
 main_loop() {
-    log_msg "refresh_sub 守护进程启动"
+    log_msg "refresh_sub 守护进程 v2 启动"
+    log_msg "数据目录: ${TRIM_PKGVAR}"
+    log_msg "配置目录: ${TRIM_PKGETC}"
+    
+    # 写入 PID
+    echo $$ > "${REFRESH_PID_FILE}"
     
     while true; do
         if check_should_run; then
             do_refresh
         else
-            log_msg "配置检查：不满足运行条件（subscription_type != remote 或 interval <= 0）"
+            log_msg "不满足运行条件（需远程订阅且刷新间隔>0）"
         fi
         
-        # 获取间隔并休眠
         local interval_sec
         interval_sec=$(get_interval_seconds)
-        log_msg "等待 ${interval_sec} 秒后再次检查..."
+        log_msg "等待 ${interval_sec} 秒..."
         sleep "${interval_sec}"
     done
 }
 
 # 信号处理
-trap 'log_msg "收到退出信号，守护进程即将退出"; exit 0' TERM INT
+trap 'log_msg "收到退出信号"; rm -f "${LOCK_FILE}" "${REFRESH_PID_FILE}"; exit 0' TERM INT
 
-# 启动主循环
+# 启动
 main_loop

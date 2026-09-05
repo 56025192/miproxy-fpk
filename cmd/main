@@ -49,6 +49,27 @@ is_running() {
 
 # ============ 订阅刷新守护进程管理 ============
 
+# 查找脚本位置（支持多种安装路径）
+find_script() {
+    local name="$1"
+    # 尝试标准安装路径
+    for p in "/var/packages/miproxy/cmd/${name}" "${TRIM_APPDEST}/cmd/${name}" "${TRIM_APPDEST}/${name}"; do
+        if [ -f "${p}" ]; then
+            echo "${p}"
+            return 0
+        fi
+    done
+    # 尝试从已知的 cmd 目录
+    for p in "/var/packages/miproxy/cmd" "${TRIM_APPDEST}/cmd"; do
+        if [ -d "${p}" ] && [ -f "${p}/${name}" ]; then
+            echo "${p}/${name}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+
 start_refresh_daemon() {
     # 检查是否需要启动守护进程
     if [ ! -f "${TRIM_PKGETC}/settings.conf" ]; then
@@ -94,11 +115,10 @@ start_refresh_daemon() {
     
     # 启动守护进程
     log_msg "启动订阅刷新守护进程 (间隔: ${refresh_interval} 小时)..."
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local refresh_sub=$(find_script "refresh_sub")
     
     # 后台运行守护进程
-    nohup bash "${script_dir}/refresh_sub" >> "${LOG_FILE}" 2>&1 &
+    nohup bash "${refresh_sub}" >> "${LOG_FILE}" 2>&1 &
     local new_pid=$!
     echo "${new_pid}" > "${REFRESH_PID_FILE}"
     

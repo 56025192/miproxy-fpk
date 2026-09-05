@@ -5,9 +5,9 @@
 # - os_max_version: 空值表示暂无明确兼容上限；填写具体版本表示最高兼容版本
 
 appname               = miproxy
-version               = 2.6.33
+version               = 2.6.34
 display_name          = MiProxy
-desc                  = MiProxy v2.6.33 - 基于 mihomo 代理核心的飞牛 NAS 应用，支持 VMess/VLess/Trojan/Shadowsocks/Hysteria2 等多种协议，提供双控制面板（Zashboard/MetaCubeXD）供选择，内置订阅管理（proxy-providers）、GEO 数据库，开箱即用 (仅支持 Clash 格式订阅)
+desc                  = MiProxy v2.6.34 - 基于 mihomo 代理核心的飞牛 NAS 应用，支持 VMess/VLess/Trojan/Shadowsocks/Hysteria2 等多种协议，提供双控制面板（Zashboard/MetaCubeXD）供选择，内置订阅管理（proxy-providers）、GEO 数据库，开箱即用 (仅支持 Clash 格式订阅)
 platform              = all
 source                = thirdparty
 os_min_version        = 1.1.0
@@ -22,4 +22,4 @@ startup               = true
 service_port          = 9090
 desktop_uidir         = ui
 desktop_applaunchname = miproxy.dashboard
-changelog           = v2.6.33: 修复 find_script 函数缺少 TRIM_PKGVAR/cmd 路径 | v2.6.32: 修复订阅刷新守护进程启动失败问题 | v2.6.21: 优化订阅刷新逻辑
+changelog           = v2.6.34: 修复 find_script 函数添加 /var/apps/miproxy/cmd 路径 | v2.6.33: 修复 TRIM_PKGVAR/cmd 路径

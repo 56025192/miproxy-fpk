@@ -44,7 +44,7 @@ if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
 fi
 
 log_msg "复制 mihomo 核心..."
-cp -f "${TRIM_APPDEST}/server/mihomo" "${VAR_DIR}/target/" 2>/dev/null || true
+cp -f "${TRIM_APPDEST}/app/server/mihomo" "${VAR_DIR}/target/" 2>/dev/null || true
 chmod +x "${VAR_DIR}/target/mihomo"
 
 SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
@@ -72,9 +72,13 @@ except:
     sys.exit(0)
 
 # 清理 YAML 文档分隔符
-content = content.replace('\n---\n', '\n').replace('^---', '').lstrip('---').rstrip('---')
+content = content.replace('
+---
+', '
+').replace('^---', '').lstrip('---').rstrip('---')
 
-lines = content.split('\n')
+lines = content.split('
+')
 result = []
 found = False
 base_indent = None
@@ -112,7 +116,8 @@ for line in lines:
     
     result.append(line)
 
-sys.stdout.write('\n'.join(result))
+sys.stdout.write('
+'.join(result))
 PYEOF
 }
 
@@ -233,7 +238,7 @@ else
 fi
 
 log_msg "启动订阅刷新守护进程 (间隔: ${REFRESH_INTERVAL_HOURS} 小时)..."
-nohup bash "${TRIM_APP}/cmd/refresh.sh" "${REFRESH_INTERVAL_HOURS}" >> "${LOG_FILE}" 2>&1 &
+nohup bash "${TRIM_APPDEST}/cmd/refresh_sub" "${REFRESH_INTERVAL_HOURS}" >> "${LOG_FILE}" 2>&1 &
 
 log_msg "===== config_callback v8.1 完成 ====="
 exit 0

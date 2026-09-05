@@ -1,8 +1,6 @@
 #!/bin/bash
 
 # MiProxy 主进程管理脚本
-TRIM_PKGVAR="${TRIM_APPDEST}/var"
-TRIM_PKGETC="${TRIM_APPDEST}/etc"
 
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
@@ -112,3 +110,4 @@ restart) stop_process; sleep 2; start_process; exit $? ;;
 status) is_running; exit $? ;;
 *) echo "Usage: $0 {start|stop|restart|status}"; exit 1 ;;
 esac
+

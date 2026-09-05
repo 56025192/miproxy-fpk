@@ -1,243 +1,245 @@
-#!/bin/bash
-# MiProxy 安装后回调脚本（v7 完整字段同步版）
-# 关键修复：完整同步订阅源的所有配置字段
-# 同步字段：proxies / proxy-groups / rules / dns / hosts / bypass / proxy-providers / rule-providers 等
-
-DEBUG_LOG="${TRIM_PKGVAR}/install_callback.log"
-exec 2>>"${DEBUG_LOG}"
-echo "===== install_callback v7 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
-
-APP_DEST="${TRIM_APPDEST}"
-VAR_DIR="${TRIM_PKGVAR}"
-TARGET_DIR="${VAR_DIR}/target"
-UI_TARGET="${VAR_DIR}/ui"
-CONFIG_FILE="${VAR_DIR}/config.yaml"
-LOG_FILE="${VAR_DIR}/info.log"
-
-PROXY_USER="${wizard_proxy_user:-}"
-PROXY_PASS="${wizard_proxy_pass:-}"
-SECRET="${wizard_secret:-}"
-HTTP_PORT="${wizard_http_port:-7890}"
-API_PORT="${wizard_api_port:-9090}"
-SUB_TYPE="${wizard_sub_type:-none}"
-SUB_URL="${wizard_sub_url:-}"
-SUB_PATH="${wizard_sub_path:-}"
-REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
-TUN_ENABLE="${wizard_tun_enable:-false}"
-
-log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG_FILE}" >> "${DEBUG_LOG}"
-}
-
-log_msg "install_callback v7 启动"
-log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
-log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}, SUB_PATH=${SUB_PATH:-（空）}"
-
-SUB_DOMAIN_FILTER=""
-if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||')
-    [ -n "${domain}" ] && SUB_DOMAIN_FILTER="    - \"${domain}\"
-    - \"*.${domain}\"
-"
-fi
-
-mkdir -p "${TARGET_DIR}" "${VAR_DIR}/proxy_providers" "${UI_TARGET}" "${TRIM_PKGETC}"
-
-log_msg "复制 mihomo 核心..."
-[ -f "${APP_DEST}/server/mihomo" ] && cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo" && chmod +x "${TARGET_DIR}/mihomo"
-
-[ -d "${APP_DEST}/ui/zashboard" ] && mkdir -p "${UI_TARGET}/zashboard" && cp -rf "${APP_DEST}/ui/zashboard/"* "${UI_TARGET}/zashboard/" 2>/dev/null
-[ -d "${APP_DEST}/ui/metacubexd" ] && mkdir -p "${UI_TARGET}/metacubexd" && cp -rf "${APP_DEST}/ui/metacubexd/"* "${UI_TARGET}/metacubexd/" 2>/dev/null
-[ -f "${APP_DEST}/ui/config" ] && cp -f "${APP_DEST}/ui/config" "${UI_TARGET}/config"
-[ -f "${APP_DEST}/ui/index.html" ] && cp -f "${APP_DEST}/ui/index.html" "${UI_TARGET}/index.html"
-[ -d "${APP_DEST}/ui/images" ] && mkdir -p "${UI_TARGET}/images" && cp -rf "${APP_DEST}/ui/images/"* "${UI_TARGET}/images/" 2>/dev/null
-chmod 666 "${UI_TARGET}/config" 2>/dev/null
-
-[ -d "${APP_DEST}/data" ] && for f in geoip.dat geosite.dat Country.mmdb; do
-    [ -f "${APP_DEST}/data/${f}" ] && cp -f "${APP_DEST}/data/${f}" "${VAR_DIR}/${f}" && chmod 666 "${VAR_DIR}/${f}" 2>/dev/null
-done
-
-SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
-
-if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
-    log_msg "下载远程订阅: ${SUB_URL}"
-    if curl -fsSL --connect-timeout 15 --max-time 60 "${SUB_URL}" -o "${SUB_CACHE_PATH}.tmp" 2>>"${DEBUG_LOG}" && [ -s "${SUB_CACHE_PATH}.tmp" ]; then
-        mv "${SUB_CACHE_PATH}.tmp" "${SUB_CACHE_PATH}"
-        log_msg "  ✅ 订阅下载成功: $(stat -c%s "${SUB_CACHE_PATH}" 2>/dev/null || wc -c < "${SUB_CACHE_PATH}") bytes"
-    else
-        log_msg "  ⚠️ 订阅下载失败"
-        rm -f "${SUB_CACHE_PATH}.tmp"
-    fi
-fi
-
-[ "${SUB_TYPE}" = "local" ] && [ -n "${SUB_PATH}" ] && [ -f "${SUB_PATH}" ] && cp -f "${SUB_PATH}" "${SUB_CACHE_PATH}"
-
-# 完整版 yaml 块提取：支持订阅源特殊格式（proxies: 块中列表项为顶格 -）
-extract_yaml_block() {
-    python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
-import sys
-key = sys.argv[1] + ":"
-try:
-    with open(sys.argv[2], 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-except:
-    sys.exit(0)
-result = []
-found = False
-for line in lines:
-    stripped = line.rstrip('
-')
-    if not stripped.strip():
-        if found: result.append(line)
-        continue
-    is_top = not stripped[0].isspace()
-    if is_top:
-        if stripped.startswith(key):
-            found = True
-            result.append(line)
-        elif found:
-            # 顶格列表项属于当前块；顶格非列表项才是下一个块
-            if stripped.startswith('-'):
-                result.append(line)
-            else:
-                break
-    elif found:
-        result.append(line)
-sys.stdout.write(''.join(result))
-PYEOF
-}
-
-# ============ v7: 完整字段同步 ============
-# 同步所有来自订阅源的配置字段
-SUB_PROXIES=""; SUB_HOSTS=""; SUB_PG=""; SUB_RULES=""; SUB_DNS=""
-SUB_BYPASS=""; SUB_PROXY_PROVIDERS=""; SUB_RULE_PROVIDERS=""; SUB_SUB_RULE=""
-SUB_TUNNELS=""; SUB_LISTENERS=""; SUB_SNIFF=""; SUB_NTP=""; SUB_SCRIPT=""
-
-if [ -f "${SUB_CACHE_PATH}" ]; then
-    # 基础字段（原有）
-    SUB_PROXIES=$(extract_yaml_block "proxies" "${SUB_CACHE_PATH}")
-    SUB_HOSTS=$(extract_yaml_block "hosts" "${SUB_CACHE_PATH}")
-    SUB_PG=$(extract_yaml_block "proxy-groups" "${SUB_CACHE_PATH}")
-    SUB_RULES=$(extract_yaml_block "rules" "${SUB_CACHE_PATH}")
-    SUB_DNS=$(extract_yaml_block "dns" "${SUB_CACHE_PATH}")
-    
-    # 扩展字段（v7 新增）
-    SUB_BYPASS=$(extract_yaml_block "bypass" "${SUB_CACHE_PATH}")
-    SUB_PROXY_PROVIDERS=$(extract_yaml_block "proxy-providers" "${SUB_CACHE_PATH}")
-    SUB_RULE_PROVIDERS=$(extract_yaml_block "rule-providers" "${SUB_CACHE_PATH}")
-    SUB_SUB_RULE=$(extract_yaml_block "sub-rule" "${SUB_CACHE_PATH}")
-    SUB_TUNNELS=$(extract_yaml_block "tunnels" "${SUB_CACHE_PATH}")
-    SUB_LISTENERS=$(extract_yaml_block "listeners" "${SUB_CACHE_PATH}")
-    SUB_SNIFF=$(extract_yaml_block "sniff" "${SUB_CACHE_PATH}")
-    SUB_NTP=$(extract_yaml_block "ntp" "${SUB_CACHE_PATH}")
-    SUB_SCRIPT=$(extract_yaml_block "script" "${SUB_CACHE_PATH}")
-    
-    log_msg "  📦 字段同步统计:"
-    log_msg "      proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行"
-    log_msg "      hosts:$(printf '%s' "${SUB_HOSTS}" | wc -l)行"
-    log_msg "      proxy-groups:$(printf '%s' "${SUB_PG}" | wc -l)行"
-    log_msg "      rules:$(printf '%s' "${SUB_RULES}" | wc -l)行"
-    log_msg "      dns:$(printf '%s' "${SUB_DNS}" | wc -l)行"
-    log_msg "      bypass:$(printf '%s' "${SUB_BYPASS}" | wc -l)行"
-    log_msg "      proxy-providers:$(printf '%s' "${SUB_PROXY_PROVIDERS}" | wc -l)行"
-    log_msg "      rule-providers:$(printf '%s' "${SUB_RULE_PROVIDERS}" | wc -l)行"
-    log_msg "      sub-rule:$(printf '%s' "${SUB_SUB_RULE}" | wc -l)行"
-    log_msg "      tunnels:$(printf '%s' "${SUB_TUNNELS}" | wc -l)行"
-    log_msg "      listeners:$(printf '%s' "${SUB_LISTENERS}" | wc -l)行"
-    log_msg "      sniff:$(printf '%s' "${SUB_SNIFF}" | wc -l)行"
-    log_msg "      ntp:$(printf '%s' "${SUB_NTP}" | wc -l)行"
-    log_msg "      script:$(printf '%s' "${SUB_SCRIPT}" | wc -l)行"
-    
-    [ -n "${SUB_DNS}" ] && ! printf '%s' "${SUB_DNS}" | grep -q "nameserver" && SUB_DNS="" && log_msg "  ⚠️ dns 缺 nameserver，回退本地默认"
-fi
-
-log_msg "生成 config.yaml..."
-
-{
-    echo "# MiProxy 主配置（v7：完整同步订阅源所有字段）"
-    echo ""
-    echo "mixed-port: ${HTTP_PORT}"
-    echo "allow-lan: true"
-    echo "mode: rule"
-    echo "log-level: info"
-    echo "ipv6: false"
-    echo "external-controller: 0.0.0.0:${API_PORT}"
-    echo "external-ui: ${UI_TARGET}"
-    echo "external-ui-name: zashboard"
-    [ -n "${SECRET}" ] && echo "secret: \"${SECRET}\""
-    [ -n "${PROXY_USER}" ] && [ -n "${PROXY_PASS}" ] && echo "authentication:" && echo "  - \"${PROXY_USER}:${PROXY_PASS}\""
-    echo "external-controller-cors:"
-    echo "  allow-private-network: true"
-    echo "  allow-origins: [\"*\"]"
-    echo "geodata-mode: true"
-    echo "geodata-loader: memconservative"
-    echo "tun:"
-    echo "  enable: ${TUN_ENABLE}"
-    echo "  stack: system"
-    echo "  auto-route: true"
-    echo "  auto-redirect: true"
-    echo "  auto-detect-interface: true"
-    echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
-
-    # ============ 来自订阅源的字段 ============
-    [ -n "${SUB_PROXIES}" ] && echo "# 节点列表（来自订阅源）" && echo "${SUB_PROXIES}"
-    [ -n "${SUB_HOSTS}" ] && echo "# hosts（来自订阅源）" && echo "${SUB_HOSTS}"
-
-    if [ -n "${SUB_PG}" ]; then
-        echo "# 代理组（来自订阅源）"
-        echo "${SUB_PG}"
-    else
-        echo "proxy-groups:"
-        echo "  - name: PROXY; type: select; proxies: [DIRECT, REJECT]"
-    fi
-
-    if [ -n "${SUB_RULES}" ]; then
-        echo "# 路由规则（来自订阅源）"
-        echo "${SUB_RULES}"
-    else
-        echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
-    fi
-
-    if [ -n "${SUB_DNS}" ]; then
-        echo "# DNS（来自订阅源）"
-        echo "${SUB_DNS}"
-    else
-        echo "dns:"
-        echo "  enable: true; listen: 0.0.0.0:53"
-        echo "  enhanced-mode: fake-ip; fake-ip-range: 198.18.0.1/16"
-        echo "  fake-ip-filter: [\"+.lan\", \"+.local\"${SUB_DOMAIN_FILTER:+, \"${domain}\", \"*.${domain}\"}]"
-        echo "  nameserver: [223.5.5.5, 119.29.29.29, 8.8.8.8]"
-    fi
-
-    # v7 新增字段
-    [ -n "${SUB_BYPASS}" ] && echo "# bypass 私有绕过列表（来自订阅源）" && echo "${SUB_BYPASS}"
-    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers 代理集合（来自订阅源）" && echo "${SUB_PROXY_PROVIDERS}"
-    [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers 规则集合（来自订阅源）" && echo "${SUB_RULE_PROVIDERS}"
-    [ -n "${SUB_SUB_RULE}" ] && echo "# sub-rule 子规则（来自订阅源）" && echo "${SUB_SUB_RULE}"
-    [ -n "${SUB_TUNNELS}" ] && echo "# tunnels 流量隧道（来自订阅源）" && echo "${SUB_TUNNELS}"
-    [ -n "${SUB_LISTENERS}" ] && echo "# listeners 监听器（来自订阅源）" && echo "${SUB_LISTENERS}"
-    [ -n "${SUB_SNIFF}" ] && echo "# sniff 嗅探（来自订阅源）" && echo "${SUB_SNIFF}"
-    [ -n "${SUB_NTP}" ] && echo "# ntp 时间同步（来自订阅源）" && echo "${SUB_NTP}"
-    [ -n "${SUB_SCRIPT}" ] && echo "# script 脚本（来自订阅源）" && echo "${SUB_SCRIPT}"
-} > "${CONFIG_FILE}"
-
-chmod 666 "${CONFIG_FILE}"
-log_msg "✅ config.yaml 已生成"
-
-rm -f "${VAR_DIR}/base.yaml" "${VAR_DIR}/subscription.yaml" "${VAR_DIR}/subscription.conf"
-
-{
-    echo "wizard_http_port=${HTTP_PORT}; wizard_api_port=${API_PORT}; wizard_tun_enable=${TUN_ENABLE}"
-    echo "wizard_sub_type=${SUB_TYPE}; wizard_refresh_interval=${REFRESH_INTERVAL_HOURS}"
-    [ -n "${PROXY_USER}" ] && echo "wizard_proxy_user=${PROXY_USER}"
-    [ -n "${PROXY_PASS}" ] && echo "wizard_proxy_pass=${PROXY_PASS}"
-    [ -n "${SECRET}" ] && echo "wizard_secret=${SECRET}"
-    [ -n "${SUB_URL}" ] && echo "wizard_sub_url=${SUB_URL}"
-    [ -n "${SUB_PATH}" ] && echo "wizard_sub_path=${SUB_PATH}"
-} > "${TRIM_PKGETC}/settings.conf"
-chmod 666 "${TRIM_PKGETC}/settings.conf" 2>/dev/null
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bash "${SCRIPT_DIR}/main" start 2>>"${DEBUG_LOG}" && log_msg "✅ miproxy 启动成功" || log_msg "⚠️  miproxy 启动失败"
-log_msg "===== install_callback v7 完成 ====="
-exit 0
+IyEvYmluL2Jhc2gKIyBNaVByb3h5IOWuieijheWQjuWbnuiwg+iEmuacrO+8
+iHY3IOWujOaVtOWtl+auteWQjOatpeeJiO+8iQojIOWFs+mUruS/ruWkje+8
+muWujOaVtOWQjOatpeiuoumYhea6kOeahOaJgOaciemFjee9ruWtl+autQoj
+IOWQjOatpeWtl+aute+8mnByb3hpZXMgLyBwcm94eS1ncm91cHMgLyBydWxl
+cyAvIGRucyAvIGhvc3RzIC8gYnlwYXNzIC8gcHJveHktcHJvdmlkZXJzIC8g
+cnVsZS1wcm92aWRlcnMg562JCgpERUJVR19MT0c9IiR7VFJJTV9QS0dWQVJ9
+L2luc3RhbGxfY2FsbGJhY2subG9nIgpleGVjIDI+PiIke0RFQlVHX0xPR30i
+CmVjaG8gIj09PT09IGluc3RhbGxfY2FsbGJhY2sgdjcg5byA5aeLOiAkKGRh
+dGUgJyslWS0lbS0lZCAlSDolTTolUycpID09PT09IiA+PiAiJHtERUJVR19M
+T0d9IgoKQVBQX0RFU1Q9IiR7VFJJTV9BUFBERVNUfSIKVkFSX0RJUj0iJHtU
+UklNX1BLR1ZBUn0iClRBUkdFVF9ESVI9IiR7VkFSX0RJUn0vdGFyZ2V0IgpV
+SV9UQVJHRVQ9IiR7VkFSX0RJUn0vdWkiCkNPTkZJR19GSUxFPSIke1ZBUl9E
+SVJ9L2NvbmZpZy55YW1sIgpMT0dfRklMRT0iJHtWQVJfRElSfS9pbmZvLmxv
+ZyIKClBST1hZX1VTRVI9IiR7d2l6YXJkX3Byb3h5X3VzZXI6LX0iClBST1hZ
+X1BBU1M9IiR7d2l6YXJkX3Byb3h5X3Bhc3M6LX0iClNFQ1JFVD0iJHt3aXph
+cmRfc2VjcmV0Oi19IgpIVFRQX1BPUlQ9IiR7d2l6YXJkX2h0dHBfcG9ydDot
+Nzg5MH0iCkFQSV9QT1JUPSIke3dpemFyZF9hcGlfcG9ydDotOTA5MH0iClNV
+Ql9UWVBFPSIke3dpemFyZF9zdWJfdHlwZTotbm9uZX0iClNVQl9VUkw9IiR7
+d2l6YXJkX3N1Yl91cmw6LX0iClNVQl9QQVRIPSIke3dpemFyZF9zdWJfcGF0
+aDotfSIKUkVGUkVTSF9JTlRFUlZBTF9IT1VSUz0iJHt3aXphcmRfcmVmcmVz
+aF9pbnRlcnZhbDotMH0iClRVTl9FTkFCTEU9IiR7d2l6YXJkX3R1bl9lbmFi
+bGU6LWZhbHNlfSIKCmxvZ19tc2coKSB7CiAgICBlY2hvICIkKGRhdGUgJysl
+WS0lbS0lZCAlSDolTTolUycpIC0gJDEiIHwgdGVlIC1hICIke0xPR19GSUxF
+fSIgPj4gIiR7REVCVUdfTE9HfSIKfQoKbG9nX21zZyAiaW5zdGFsbF9jYWxs
+YmFjayB2NyDlkK/liqgiCmxvZ19tc2cgIiAgSFRUUF9QT1JUPSR7SFRUUF9Q
+T1JUfSwgQVBJX1BPUlQ9JHtBUElfUE9SVH0iCmxvZ19tc2cgIiAgU1VCX1RZ
+UEU9JHtTVUJfVFlQRX0sIFNVQl9VUkw9JHtTVUJfVVJMOi3vvIjnqbrvvIl9
+LCBTVUJfUEFUSD0ke1NVQl9QQVRIOi3vvIjnqbrvvIl9IgoKU1VCX0RPTUFJ
+Tl9GSUxURVI9IiIKaWYgWyAiJHtTVUJfVFlQRX0iID0gInJlbW90ZSIgXSAm
+JiBbIC1uICIke1NVQl9VUkx9IiBdOyB0aGVuCiAgICBkb21haW49JChlY2hv
+ICIke1NVQl9VUkx9IiB8IHNlZCAtRSAnc3xeaHR0cHM/Oi8vfHw7IHN8Ly4q
+JHx8OyBzfDouKiR8fCcpCiAgICBbIC1uICIke2RvbWFpbn0iIF0gJiYgU1VC
+X0RPTUFJTl9GSUxURVI9IiAgICAtIFwiJHtkb21haW59XCJcbiAgICAtIFwi
+Ki4ke2RvbWFpbn1cIlxuIgpmaQoKbWtkaXIgLXAgIiR7VEFSR0VUX0RJUn0i
+ICIke1ZBUl9ESVJ9L3Byb3h5X3Byb3ZpZGVycyIgIiR7VUlfVEFSR0VUfSIg
+IiR7VFJJTV9QS0dFVEN9IgoKbG9nX21zZyAi5aSN5Yi2IG1paG9tbyDmoLjl
+v4MuLi4iClsgLWYgIiR7QVBQX0RFU1R9L3NlcnZlci9taWhvbW8iIF0gJiYg
+Y3AgLWYgIiR7QVBQX0RFU1R9L3NlcnZlci9taWhvbW8iICIke1RBUkdFVF9E
+SVJ9L21paG9tbyIgJiYgY2htb2QgK3ggIiR7VEFSR0VUX0RJUn0vbWlob21v
+IgoKWyAtZCAiJHtBUFBfREVTVH0vdWkvemFzaGJvYXJkIiBdICYmIG1rZGly
+IC1wICIke1VJX1RBUkdFVH0vemFzaGJvYXJkIiAmJiBjcCAtcmYgIiR7QVBQ
+X0RFU1R9L3VpL3phc2hib2FyZC8iKiAiJHtVSV9UQVJHRVR9L3phc2hib2Fy
+ZC8iIDI+L2Rldi9udWxsClsgLWQgIiR7QVBQX0RFU1R9L3VpL21ldGFjdWJl
+eGQiIF0gJiYgbWtkaXIgLXAgIiR7VUlfVEFSR0VUfS9tZXRhY3ViZXhkIiAm
+JiBjcCAtcmYgIiR7QVBQX0RFU1R9L3VpL21ldGFjdWJleGQvIiogIiR7VUlf
+VEFSR0VUfS9tZXRhY3ViZXhkLyIgMj4vZGV2L251bGwKWyAtZiAiJHtBUFBf
+REVTVH0vdWkvY29uZmlnIiBdICYmIGNwIC1mICIke0FQUF9ERVNUfS91aS9j
+b25maWciICIke1VJX1RBUkdFVH0vY29uZmlnIgpbIC1mICIke0FQUF9ERVNU
+fS91aS9pbmRleC5odG1sIiBdICYmIGNwIC1mICIke0FQUF9ERVNUfS91aS9p
+bmRleC5odG1sIiAiJHtVSV9UQVJHRVR9L2luZGV4Lmh0bWwiClsgLWQgIiR7
+QVBQX0RFU1R9L3VpL2ltYWdlcyIgXSAmJiBta2RpciAtcCAiJHtVSV9UQVJH
+RVR9L2ltYWdlcyIgJiYgY3AgLXJmICIke0FQUF9ERVNUfS91aS9pbWFnZXMv
+IiogIiR7VUlfVEFSR0VUfS9pbWFnZXMvIiAyPi9kZXYvbnVsbApjaG1vZCA2
+NjYgIiR7VUlfVEFSR0VUfS9jb25maWciIDI+L2Rldi9udWxsCgpbIC1kICIk
+e0FQUF9ERVNUfS9kYXRhIiBdICYmIGZvciBmIGluIGdlb2lwLmRhdCBnZW9z
+aXRlLmRhdCBDb3VudHJ5Lm1tZGI7IGRvCiAgICBbIC1mICIke0FQUF9ERVNU
+fS9kYXRhLyR7Zn0iIF0gJiYgY3AgLWYgIiR7QVBQX0RFU1R9L2RhdGEvJHtm
+fSIgIiR7VkFSX0RJUn0vJHtmfSIgJiYgY2htb2QgNjY2ICIke1ZBUl9ESVJ9
+LyR7Zn0iIDI+L2Rldi9udWxsCmRvbmUKClNVQl9DQUNIRV9QQVRIPSIke1ZB
+Ul9ESVJ9L3Byb3h5X3Byb3ZpZGVycy9zdWJzY3JpcHRpb24ueWFtbCIKCmlm
+IFsgIiR7U1VCX1RZUEV9IiA9ICJyZW1vdGUiIF0gJiYgWyAtbiAiJHtTVUJf
+VVJMfSIgXTsgdGhlbgogICAgbG9nX21zZyAi5LiL6L296L+c56iL6K6i6ZiF
+OiAke1NVQl9VUkx9IgogICAgaWYgY3VybCAtZnNTTCAtLWNvbm5lY3QtdGlt
+ZW91dCAxNSAtLW1heC10aW1lIDYwICIke1NVQl9VUkx9IiAtbyAiJHtTVUJf
+Q0FDSEVfUEFUSH0udG1wIiAyPj4iJHtERUJVR19MT0d9IiAmJiBbIC1zICIk
+e1NVQl9DQUNIRV9QQVRIfS50bXAiIF07IHRoZW4KICAgICAgICBtdiAiJHtT
+VUJfQ0FDSEVfUEFUSH0udG1wIiAiJHtTVUJfQ0FDSEVfUEFUSH0iCiAgICAg
+ICAgbG9nX21zZyAiICDinIUg6K6i6ZiF5LiL6L295oiQ5YqfOiAkKHN0YXQg
+LWMlcyAiJHtTVUJfQ0FDSEVfUEFUSH0iIDI+L2Rldi9udWxsIHx8IHdjIC1j
+IDwgIiR7U1VCX0NBQ0hFX1BBVEh9IikgYnl0ZXMiCiAgICBlbHNlCiAgICAg
+ICAgbG9nX21zZyAiICDimqDvuI8g6K6i6ZiF5LiL6L295aSx6LSlIgogICAg
+ICAgIHJtIC1mICIke1NVQl9DQUNIRV9QQVRIfS50bXAiCiAgICBmaQpmaQoK
+WyAiJHtTVUJfVFlQRX0iID0gImxvY2FsIiBdICYmIFsgLW4gIiR7U1VCX1BB
+VEh9IiBdICYmIFsgLWYgIiR7U1VCX1BBVEh9IiBdICYmIGNwIC1mICIke1NV
+Ql9QQVRIfSIgIiR7U1VCX0NBQ0hFX1BBVEh9IgoKIyDlrozmlbTniYggeWFt
+bCDlnZfmj5Dlj5bvvJrmlK/mjIHorqLpmIXmupDnibnmrormoLzlvI/vvIhw
+cm94aWVzOiDlnZfkuK3liJfooajpobnkuLrpobbmoLwgLe+8iQpleHRyYWN0
+X3lhbWxfYmxvY2soKSB7CiAgICBweXRob24zIC0gIiQxIiAiJDIiIDI+L2Rl
+di9udWxsIDw8J1BZRU9GJwppbXBvcnQgc3lzCmtleSA9IHN5cy5hcmd2WzFd
+ICsgIjoiCnRyeToKICAgIHdpdGggb3BlbihzeXMuYXJndlsyXSwgJ3InLCBl
+bmNvZGluZz0ndXRmLTgnKSBhcyBmOgogICAgICAgIGxpbmVzID0gZi5yZWFk
+bGluZXMoKQpleGNlcHQ6CiAgICBzeXMuZXhpdCgwKQpyZXN1bHQgPSBbXQpm
+b3VuZCA9IEZhbHNlCmZvciBsaW5lIGluIGxpbmVzOgogICAgc3RyaXBwZWQg
+PSBsaW5lLnJzdHJpcCgnXG4nKQogICAgaWYgbm90IHN0cmlwcGVkLnN0cmlw
+KCk6CiAgICAgICAgaWYgZm91bmQ6IHJlc3VsdC5hcHBlbmQobGluZSkKICAg
+ICAgICBjb250aW51ZQogICAgaXNfdG9wID0gbm90IHN0cmlwcGVkWzBdLmlz
+c3BhY2UoKQogICAgaWYgaXNfdG9wOgogICAgICAgIGlmIHN0cmlwcGVkLnN0
+YXJ0c3dpdGgoa2V5KToKICAgICAgICAgICAgZm91bmQgPSBUcnVlCiAgICAg
+ICAgICAgIHJlc3VsdC5hcHBlbmQobGluZSkKICAgICAgICBlbGlmIGZvdW5k
+OgogICAgICAgICAgICAjIOmhtuagvOWIl+ihqOmhueWxnuS6juW9k+WJjeWd
+l++8m+mhtuagvOmdnuWIl+ihqOmhueaJjeaYr+S4i+S4gOS4quWdlwogICAg
+ICAgICAgICBpZiBzdHJpcHBlZC5zdGFydHN3aXRoKCctJyk6CiAgICAgICAg
+ICAgICAgICByZXN1bHQuYXBwZW5kKGxpbmUpCiAgICAgICAgICAgIGVsc2U6
+CiAgICAgICAgICAgICAgICBicmVhawogICAgZWxpZiBmb3VuZDoKICAgICAg
+ICByZXN1bHQuYXBwZW5kKGxpbmUpCnN5cy5zdGRvdXQud3JpdGUoJycuam9p
+bihyZXN1bHQpKQpQWUVPRgp9CgojID09PT09PT09PT09PSB2Nzog5a6M5pW0
+5a2X5q615ZCM5q2lID09PT09PT09PT09PQojIOWQjOatpeaJgOacieadpeiH
+quiuoumYhea6kOeahOmFjee9ruWtl+autQpTVUJfUFJPWElFUz0iIjsgU1VC
+X0hPU1RTPSIiOyBTVUJfUEc9IiI7IFNVQl9SVUxFUz0iIjsgU1VCX0ROUz0i
+IgpTVUJfQllQQVNTPSIiOyBTVUJfUFJPWFlfUFJPVklERVJTPSIiOyBTVUJf
+UlVMRV9QUk9WSURFUlM9IiI7IFNVQl9TVUJfUlVMRT0iIgpTVUJfVFVOTkVM
+Uz0iIjsgU1VCX0xJU1RFTkVSUz0iIjsgU1VCX1NOSUZGPSIiOyBTVUJfTlRQ
+PSIiOyBTVUJfU0NSSVBUPSIiCgppZiBbIC1mICIke1NVQl9DQUNIRV9QQVRI
+fSIgXTsgdGhlbgogICAgIyDln7rnoYDlrZfmrrXvvIjljp/mnInvvIkKICAg
+IFNVQl9QUk9YSUVTPSQoZXh0cmFjdF95YW1sX2Jsb2NrICJwcm94aWVzIiAi
+JHtTVUJfQ0FDSEVfUEFUSH0iKQogICAgU1VCX0hPU1RTPSQoZXh0cmFjdF95
+YW1sX2Jsb2NrICJob3N0cyIgIiR7U1VCX0NBQ0hFX1BBVEh9IikKICAgIFNV
+Ql9QRz0kKGV4dHJhY3RfeWFtbF9ibG9jayAicHJveHktZ3JvdXBzIiAiJHtT
+VUJfQ0FDSEVfUEFUSH0iKQogICAgU1VCX1JVTEVTPSQoZXh0cmFjdF95YW1s
+X2Jsb2NrICJydWxlcyIgIiR7U1VCX0NBQ0hFX1BBVEh9IikKICAgIFNVQl9E
+TlM9JChleHRyYWN0X3lhbWxfYmxvY2sgImRucyIgIiR7U1VCX0NBQ0hFX1BB
+VEh9IikKICAgIAogICAgIyDmianlsZXlrZfmrrXvvIh2NyDmlrDlop7vvIkK
+ICAgIFNVQl9CWVBBU1M9JChleHRyYWN0X3lhbWxfYmxvY2sgImJ5cGFzcyIg
+IiR7U1VCX0NBQ0hFX1BBVEh9IikKICAgIFNVQl9QUk9YWV9QUk9WSURFUlM9
+JChleHRyYWN0X3lhbWxfYmxvY2sgInByb3h5LXByb3ZpZGVycyIgIiR7U1VC
+X0NBQ0hFX1BBVEh9IikKICAgIFNVQl9SVUxFX1BST1ZJREVSUz0kKGV4dHJh
+Y3RfeWFtbF9ibG9jayAicnVsZS1wcm92aWRlcnMiICIke1NVQl9DQUNIRV9Q
+QVRIfSIpCiAgICBTVUJfU1VCX1JVTEU9JChleHRyYWN0X3lhbWxfYmxvY2sg
+InN1Yi1ydWxlIiAiJHtTVUJfQ0FDSEVfUEFUSH0iKQogICAgU1VCX1RVTk5F
+TFM9JChleHRyYWN0X3lhbWxfYmxvY2sgInR1bm5lbHMiICIke1NVQl9DQUNI
+RV9QQVRIfSIpCiAgICBTVUJfTElTVEVORVJTPSQoZXh0cmFjdF95YW1sX2Js
+b2NrICJsaXN0ZW5lcnMiICIke1NVQl9DQUNIRV9QQVRIfSIpCiAgICBTVUJf
+U05JRkY9JChleHRyYWN0X3lhbWxfYmxvY2sgInNuaWZmIiAiJHtTVUJfQ0FD
+SEVfUEFUSH0iKQogICAgU1VCX05UUD0kKGV4dHJhY3RfeWFtbF9ibG9jayAi
+bnRwIiAiJHtTVUJfQ0FDSEVfUEFUSH0iKQogICAgU1VCX1NDUklQVD0kKGV4
+dHJhY3RfeWFtbF9ibG9jayAic2NyaXB0IiAiJHtTVUJfQ0FDSEVfUEFUSH0i
+KQogICAgCiAgICBsb2dfbXNnICIgIPCfk6Yg5a2X5q615ZCM5q2l57uf6K6h
+OiIKICAgIGxvZ19tc2cgIiAgICAgIHByb3hpZXM6JChwcmludGYgJyVzJyAi
+JHtTVUJfUFJPWElFU30iIHwgd2MgLWwp6KGMIgogICAgbG9nX21zZyAiICAg
+ICAgaG9zdHM6JChwcmludGYgJyVzJyAiJHtTVUJfSE9TVFN9IiB8IHdjIC1s
+KeihjCIKICAgIGxvZ19tc2cgIiAgICAgIHByb3h5LWdyb3VwczokKHByaW50
+ZiAnJXMnICIke1NVQl9QR30iIHwgd2MgLWwp6KGMIgogICAgbG9nX21zZyAi
+ICAgICAgcnVsZXM6JChwcmludGYgJyVzJyAiJHtTVUJfUlVMRVN9IiB8IHdj
+IC1sKeihjCIKICAgIGxvZ19tc2cgIiAgICAgIGRuczokKHByaW50ZiAnJXMn
+ICIke1NVQl9ETlN9IiB8IHdjIC1sKeihjCIKICAgIGxvZ19tc2cgIiAgICAg
+IGJ5cGFzczokKHByaW50ZiAnJXMnICIke1NVQl9CWVBBU1N9IiB8IHdjIC1s
+KeihjCIKICAgIGxvZ19tc2cgIiAgICAgIHByb3h5LXByb3ZpZGVyczokKHBy
+aW50ZiAnJXMnICIke1NVQl9QUk9YWV9QUk9WSURFUlN9IiB8IHdjIC1sKeih
+jCIKICAgIGxvZ19tc2cgIiAgICAgIHJ1bGUtcHJvdmlkZXJzOiQocHJpbnRm
+ICclcycgIiR7U1VCX1JVTEVfUFJPVklERVJTfSIgfCB3YyAtbCnooYwiCiAg
+ICBsb2dfbXNnICIgICAgICBzdWItcnVsZTokKHByaW50ZiAnJXMnICIke1NV
+Ql9TVUJfUlVMRX0iIHwgd2MgLWwp6KGMIgogICAgbG9nX21zZyAiICAgICAg
+dHVubmVsczokKHByaW50ZiAnJXMnICIke1NVQl9UVU5ORUxTfSIgfCB3YyAt
+bCnooYwiCiAgICBsb2dfbXNnICIgICAgICBsaXN0ZW5lcnM6JChwcmludGYg
+JyVzJyAiJHtTVUJfTElTVEVORVJTfSIgfCB3YyAtbCnooYwiCiAgICBsb2df
+bXNnICIgICAgICBzbmlmZjokKHByaW50ZiAnJXMnICIke1NVQl9TTklGRn0i
+IHwgd2MgLWwp6KGMIgogICAgbG9nX21zZyAiICAgICAgbnRwOiQocHJpbnRm
+ICclcycgIiR7U1VCX05UUH0iIHwgd2MgLWwp6KGMIgogICAgbG9nX21zZyAi
+ICAgICAgc2NyaXB0OiQocHJpbnRmICclcycgIiR7U1VCX1NDUklQVH0iIHwg
+d2MgLWwp6KGMIgogICAgCiAgICBbIC1uICIke1NVQl9ETlN9IiBdICYmICEg
+cHJpbnRmICclcycgIiR7U1VCX0ROU30iIHwgZ3JlcCAtcSAibmFtZXNlcnZl
+ciIgJiYgU1VCX0ROUz0iIiAmJiBsb2dfbXNnICIgIOKaoO+4jyBkbnMg57y6
+IG5hbWVzZXJ2ZXLvvIzlm57pgIDmnKzlnLDpu5jorqQiCmZpCgpsb2dfbXNn
+ICLnlJ/miJAgY29uZmlnLnlhbWwuLi4iCgp7CiAgICBlY2hvICIjIE1pUHJv
+eHkg5Li76YWN572u77yIdjfvvJrlrozmlbTlkIzmraXorqLpmIXmupDmiYDm
+nInlrZfmrrXvvIkiCiAgICBlY2hvICIiCiAgICBlY2hvICJtaXhlZC1wb3J0
+OiAke0hUVFBfUE9SVH0iCiAgICBlY2hvICJhbGxvdy1sYW46IHRydWUiCiAg
+ICBlY2hvICJtb2RlOiBydWxlIgogICAgZWNobyAibG9nLWxldmVsOiBpbmZv
+IgogICAgZWNobyAiaXB2NjogZmFsc2UiCiAgICBlY2hvICJleHRlcm5hbC1j
+b250cm9sbGVyOiAwLjAuMC4wOiR7QVBJX1BPUlR9IgogICAgZWNobyAiZXh0
+ZXJuYWwtdWk6ICR7VUlfVEFSR0VUfSIKICAgIGVjaG8gImV4dGVybmFsLXVp
+LW5hbWU6IHphc2hib2FyZCIKICAgIFsgLW4gIiR7U0VDUkVUfSIgXSAmJiBl
+Y2hvICJzZWNyZXQ6IFwiJHtTRUNSRVR9XCIiCiAgICBbIC1uICIke1BST1hZ
+X1VTRVJ9IiBdICYmIFsgLW4gIiR7UFJPWFlfUEFTU30iIF0gJiYgZWNobyAi
+YXV0aGVudGljYXRpb246IiAmJiBlY2hvICIgIC0gXCIke1BST1hZX1VTRVJ9
+OiR7UFJPWFlfUEFTU31cIiIKICAgIGVjaG8gImV4dGVybmFsLWNvbnRyb2xs
+ZXItY29yczoiCiAgICBlY2hvICIgIGFsbG93LXByaXZhdGUtbmV0d29yazog
+dHJ1ZSIKICAgIGVjaG8gIiAgYWxsb3ctb3JpZ2luczogW1wiKlwiXSIKICAg
+IGVjaG8gImdlb2RhdGEtbW9kZTogdHJ1ZSIKICAgIGVjaG8gImdlb2RhdGEt
+bG9hZGVyOiBtZW1jb25zZXJ2YXRpdmUiCiAgICBlY2hvICJ0dW46IgogICAg
+ZWNobyAiICBlbmFibGU6ICR7VFVOX0VOQUJMRX0iCiAgICBlY2hvICIgIHN0
+YWNrOiBzeXN0ZW0iCiAgICBlY2hvICIgIGF1dG8tcm91dGU6IHRydWUiCiAg
+ICBlY2hvICIgIGF1dG8tcmVkaXJlY3Q6IHRydWUiCiAgICBlY2hvICIgIGF1
+dG8tZGV0ZWN0LWludGVyZmFjZTogdHJ1ZSIKICAgIGVjaG8gIiAgZG5zLWhp
+amFjazogW1wiYW55OjUzXCIsIFwidGNwOi8vYW55OjUzXCJdIgoKICAgICMg
+PT09PT09PT09PT09IOadpeiHquiuoumYhea6kOeahOWtl+autSA9PT09PT09
+PT09PT0KICAgIFsgLW4gIiR7U1VCX1BST1hJRVN9IiBdICYmIGVjaG8gIiMg
+6IqC54K55YiX6KGo77yI5p2l6Ieq6K6i6ZiF5rqQ77yJIiAmJiBlY2hvICIk
+e1NVQl9QUk9YSUVTfSIKICAgIFsgLW4gIiR7U1VCX0hPU1RTfSIgXSAmJiBl
+Y2hvICIjIGhvc3Rz77yI5p2l6Ieq6K6i6ZiF5rqQ77yJIiAmJiBlY2hvICIk
+e1NVQl9IT1NUU30iCgogICAgaWYgWyAtbiAiJHtTVUJfUEd9IiBdOyB0aGVu
+CiAgICAgICAgZWNobyAiIyDku6PnkIbnu4TvvIjmnaXoh6rorqLpmIXmupDv
+vIkiCiAgICAgICAgZWNobyAiJHtTVUJfUEd9IgogICAgZWxzZQogICAgICAg
+IGVjaG8gInByb3h5LWdyb3VwczoiCiAgICAgICAgZWNobyAiICAtIG5hbWU6
+IFBST1hZOyB0eXBlOiBzZWxlY3Q7IHByb3hpZXM6IFtESVJFQ1QsIFJFSkVD
+VF0iCiAgICBmaQoKICAgIGlmIFsgLW4gIiR7U1VCX1JVTEVTfSIgXTsgdGhl
+bgogICAgICAgIGVjaG8gIiMg6Lev55Sx6KeE5YiZ77yI5p2l6Ieq6K6i6ZiF
+5rqQ77yJIgogICAgICAgIGVjaG8gIiR7U1VCX1JVTEVTfSIKICAgIGVsc2UK
+ICAgICAgICBlY2hvICJydWxlczogW1wiR0VPSVAsQ04sRElSRUNUXCIsIFwi
+TUFUQ0gsUFJPWFlcIl0iCiAgICBmaQoKICAgIGlmIFsgLW4gIiR7U1VCX0RO
+U30iIF07IHRoZW4KICAgICAgICBlY2hvICIjIEROU++8iOadpeiHquiuoumY
+hea6kO+8iSIKICAgICAgICBlY2hvICIke1NVQl9ETlN9IgogICAgZWxzZQog
+ICAgICAgIGVjaG8gImRuczoiCiAgICAgICAgZWNobyAiICBlbmFibGU6IHRy
+dWU7IGxpc3RlbjogMC4wLjAuMDo1MyIKICAgICAgICBlY2hvICIgIGVuaGFu
+Y2VkLW1vZGU6IGZha2UtaXA7IGZha2UtaXAtcmFuZ2U6IDE5OC4xOC4wLjEv
+MTYiCiAgICAgICAgZWNobyAiICBmYWtlLWlwLWZpbHRlcjogW1wiKy5sYW5c
+IiwgXCIrLmxvY2FsXCIke1NVQl9ET01BSU5fRklMVEVSOissIFwiJHtkb21h
+aW59XCIsIFwiKi4ke2RvbWFpbn1cIn1dIgogICAgICAgIGVjaG8gIiAgbmFt
+ZXNlcnZlcjogWzIyMy41LjUuNSwgMTE5LjI5LjI5LjI5LCA4LjguOC44XSIK
+ICAgIGZpCgogICAgIyB2NyDmlrDlop7lrZfmrrUKICAgIFsgLW4gIiR7U1VC
+X0JZUEFTU30iIF0gJiYgZWNobyAiIyBieXBhc3Mg56eB5pyJ57uV6L+H5YiX
+6KGo77yI5p2l6Ieq6K6i6ZiF5rqQ77yJIiAmJiBlY2hvICIke1NVQl9CWVBB
+U1N9IgogICAgWyAtbiAiJHtTVUJfUFJPWFlfUFJPVklERVJTfSIgXSAmJiBl
+Y2hvICIjIHByb3h5LXByb3ZpZGVycyDku6PnkIbpm4blkIjvvIjmnaXoh6ro
+rqLpmIXmupDvvIkiICYmIGVjaG8gIiR7U1VCX1BST1hZX1BST1ZJREVSU30i
+CiAgICBbIC1uICIke1NVQl9SVUxFX1BST1ZJREVSU30iIF0gJiYgZWNobyAi
+IyBydWxlLXByb3ZpZGVycyDop4TliJnpm4blkIjvvIjmnaXoh6rorqLpmIXm
+upDvvIkiICYmIGVjaG8gIiR7U1VCX1JVTEVfUFJPVklERVJTfSIKICAgIFsg
+LW4gIiR7U1VCX1NVQl9SVUxFfSIgXSAmJiBlY2hvICIjIHN1Yi1ydWxlIOWt
+kOinhOWIme+8iOadpeiHquiuoumYhea6kO+8iSIgJiYgZWNobyAiJHtTVUJf
+U1VCX1JVTEV9IgogICAgWyAtbiAiJHtTVUJfVFVOTkVMU30iIF0gJiYgZWNo
+byAiIyB0dW5uZWxzIOa1gemHj+map+mBk++8iOadpeiHquiuoumYhea6kO+8
+iSIgJiYgZWNobyAiJHtTVUJfVFVOTkVMU30iCiAgICBbIC1uICIke1NVQl9M
+SVNURU5FUlN9IiBdICYmIGVjaG8gIiMgbGlzdGVuZXJzIOebkeWQrOWZqO+8
+iOadpeiHquiuoumYhea6kO+8iSIgJiYgZWNobyAiJHtTVUJfTElTVEVORVJT
+fSIKICAgIFsgLW4gIiR7U1VCX1NOSUZGfSIgXSAmJiBlY2hvICIjIHNuaWZm
+IOWXheaOou+8iOadpeiHquiuoumYhea6kO+8iSIgJiYgZWNobyAiJHtTVUJf
+U05JRkZ9IgogICAgWyAtbiAiJHtTVUJfTlRQfSIgXSAmJiBlY2hvICIjIG50
+cCDml7bpl7TlkIzmraXvvIjmnaXoh6rorqLpmIXmupDvvIkiICYmIGVjaG8g
+IiR7U1VCX05UUH0iCiAgICBbIC1uICIke1NVQl9TQ1JJUFR9IiBdICYmIGVj
+aG8gIiMgc2NyaXB0IOiEmuacrO+8iOadpeiHquiuoumYhea6kO+8iSIgJiYg
+ZWNobyAiJHtTVUJfU0NSSVBUfSIKfSA+ICIke0NPTkZJR19GSUxFfSIKCmNo
+bW9kIDY2NiAiJHtDT05GSUdfRklMRX0iCmxvZ19tc2cgIuKchSBjb25maWcu
+eWFtbCDlt7LnlJ/miJAiCgpybSAtZiAiJHtWQVJfRElSfS9iYXNlLnlhbWwi
+ICIke1ZBUl9ESVJ9L3N1YnNjcmlwdGlvbi55YW1sIiAiJHtWQVJfRElSfS9z
+dWJzY3JpcHRpb24uY29uZiIKCnsKICAgIGVjaG8gIndpemFyZF9odHRwX3Bv
+cnQ9JHtIVFRQX1BPUlR9OyB3aXphcmRfYXBpX3BvcnQ9JHtBUElfUE9SVH07
+IHdpemFyZF90dW5fZW5hYmxlPSR7VFVOX0VOQUJMRX0iCiAgICBlY2hvICJ3
+aXphcmRfc3ViX3R5cGU9JHtTVUJfVFlQRX07IHdpemFyZF9yZWZyZXNoX2lu
+dGVydmFsPSR7UkVGUkVTSF9JTlRFUlZBTF9IT1VSU30iCiAgICBbIC1uICIk
+e1BST1hZX1VTRVJ9IiBdICYmIGVjaG8gIndpemFyZF9wcm94eV91c2VyPSR7
+UFJPWFlfVVNFUn0iCiAgICBbIC1uICIke1BST1hZX1BBU1N9IiBdICYmIGVj
+aG8gIndpemFyZF9wcm94eV9wYXNzPSR7UFJPWFlfUEFTU30iCiAgICBbIC1u
+ICIke1NFQ1JFVH0iIF0gJiYgZWNobyAid2l6YXJkX3NlY3JldD0ke1NFQ1JF
+VH0iCiAgICBbIC1uICIke1NVQl9VUkx9IiBdICYmIGVjaG8gIndpemFyZF9z
+dWJfdXJsPSR7U1VCX1VSTH0iCiAgICBbIC1uICIke1NVQl9QQVRIfSIgXSAm
+JiBlY2hvICJ3aXphcmRfc3ViX3BhdGg9JHtTVUJfUEFUSH0iCn0gPiAiJHtU
+UklNX1BLR0VUQ30vc2V0dGluZ3MuY29uZiIKY2htb2QgNjY2ICIke1RSSU1f
+UEtHRVRDfS9zZXR0aW5ncy5jb25mIiAyPi9kZXYvbnVsbAoKU0NSSVBUX0RJ
+Uj0iJChjZCAiJChkaXJuYW1lICIke0JBU0hfU09VUkNFWzBdfSIpIiAmJiBw
+d2QpIgpiYXNoICIke1NDUklQVF9ESVJ9L21haW4iIHN0YXJ0IDI+PiIke0RF
+QlVHX0xPR30iICYmIGxvZ19tc2cgIuKchSBtaXByb3h5IOWQr+WKqOaIkOWK
+nyIgfHwgbG9nX21zZyAi4pqg77iPICBtaXByb3h5IOWQr+WKqOWksei0pSIK
+bG9nX21zZyAiPT09PT0gaW5zdGFsbF9jYWxsYmFjayB2NyDlrozmiJAgPT09
+PT0iCmV4aXQgMAo=

@@ -1,6 +1,9 @@
 #!/bin/bash
 
 # MiProxy 主进程管理脚本
+TRIM_PKGVAR="${TRIM_APPDEST}/var"
+TRIM_PKGETC="${TRIM_APPDEST}/etc"
+
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_sub.pid"
@@ -39,9 +42,12 @@ find_script() {
 start_refresh_daemon() {
     [ ! -f "${TRIM_PKGETC}/settings.conf" ] && log_msg "配置文件不存在，跳过" && return 0
     
-    local sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
-    local sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
-    local refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '\n')
+    local sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
+')
+    local sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
+')
+    local refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
+')
     
     [ "${sub_type}" != "remote" ] && log_msg "订阅类型为 ${sub_type}，不启动" && return 0
     [ -z "${sub_url}" ] && log_msg "订阅 URL 为空" && return 0

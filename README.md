@@ -45,36 +45,44 @@
 
 ---
 
-## 目录结构
+## 项目结构
 
-miproxy-fpk/
-├── .github/
-├── app/
-│   ├── data/
-│   ├── server/
-│   └── ui/
-├── cmd/
-│   ├── config_callback
-│   ├── config_init
-│   ├── install_callback
-│   ├── install_init
-│   ├── main
-│   ├── refresh_sub
-│   ├── uninstall_callback
-│   ├── uninstall_init
-│   ├── upgrade_callback
-│   └── upgrade_init
-├── config/
-│   ├── privilege
-│   └── resource
-├── wizard/
-│   ├── config
-│   ├── install
-│   └── uninstall
-├── ICON.PNG
-├── ICON_256.PNG
-├── manifest
-└── README.md
+```
+.
+├── .github/                    # GitHub Actions CI/CD 配置
+│   └── workflows/
+│
+├── app/                        # 应用运行时目录
+│   ├── server/                 # mihomo 核心程序
+│   ├── data/                   # GEO 数据库 (GeoIP/GeoSite/MMDB)
+│   └── ui/                     # 前端界面 (Zashboard/MetaCubeXD)
+│
+├── cmd/                        # 生命周期脚本
+│   ├── main                    # 启动/停止主脚本
+│   ├── install_callback        # 安装完成回调
+│   ├── install_init            # 安装初始化
+│   ├── config_callback         # 配置变更回调
+│   ├── config_init             # 配置初始化
+│   ├── upgrade_callback        # 升级完成回调
+│   ├── upgrade_init            # 升级初始化
+│   ├── uninstall_callback      # 卸载回调
+│   ├── uninstall_init          # 卸载初始化
+│   └── refresh_sub             # 订阅刷新脚本
+│
+├── config/                     # fnOS 系统配置
+│   ├── privilege               # 权限声明
+│   └── resource                # 资源配额
+│
+├── wizard/                     # 安装向导
+│   ├── install                 # 安装向导脚本
+│   ├── config                  # 配置向导脚本
+│   └── uninstall               # 卸载向导脚本
+│
+├── manifest                    # FPK 应用清单 (版本/平台/依赖等)
+├── ICON.PNG                    # 应用图标
+├── ICON_256.PNG                # 高清应用图标
+└── README.md                   # 项目文档
+```
 
 ---
 

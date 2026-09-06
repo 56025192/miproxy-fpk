@@ -5,266 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MiProxy - 选择控制面板</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        .container {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 24px;
-            padding: 48px 40px;
-            max-width: 520px;
-            width: 100%;
-            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.25);
-        }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        
-        .logo {
-            width: 72px;
-            height: 72px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            border-radius: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 20px;
-            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
-        }
-        
-        .logo svg {
-            width: 40px;
-            height: 40px;
-            fill: white;
-        }
-        
-        h1 {
-            color: #1a1a2e;
-            font-size: 26px;
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
-        
-        .subtitle {
-            color: #666;
-            font-size: 14px;
-        }
-        
-        .panel-list {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-        
-        .panel-card {
-            display: flex;
-            align-items: center;
-            padding: 20px 24px;
-            background: #f8f9fa;
-            border: 2px solid transparent;
-            border-radius: 16px;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            text-decoration: none;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .panel-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        
-        .panel-card:hover {
-            border-color: #667eea;
-            transform: translateY(-3px);
-            box-shadow: 0 12px 32px rgba(102, 126, 234, 0.25);
-        }
-        
-        .panel-card:hover::before {
-            opacity: 1;
-        }
-        
-        .panel-icon {
-            width: 52px;
-            height: 52px;
-            border-radius: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 18px;
-            flex-shrink: 0;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .panel-icon.zashboard {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-        
-        .panel-icon.metacubexd {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-        
-        .panel-icon svg {
-            width: 26px;
-            height: 26px;
-            fill: white;
-        }
-        
-        .panel-info {
-            flex: 1;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .panel-name {
-            color: #1a1a2e;
-            font-size: 17px;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }
-        
-        .panel-desc {
-            color: #888;
-            font-size: 13px;
-            line-height: 1.4;
-        }
-        
-        .panel-arrow {
-            width: 20px;
-            height: 20px;
-            fill: #ccc;
-            transition: all 0.3s;
-            position: relative;
-            z-index: 1;
-            margin-left: 12px;
-        }
-        
-        .panel-card:hover .panel-arrow {
-            fill: #667eea;
-            transform: translateX(4px);
-        }
-        
-        .footer {
-            text-align: center;
-            margin-top: 32px;
-            color: #999;
-            font-size: 12px;
-        }
-        
-        .footer a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        
-        .footer a:hover {
-            text-decoration: underline;
-        }
-        
-        @media (max-width: 480px) {
-            .container {
-                padding: 32px 24px;
-            }
-            
-            h1 {
-                font-size: 22px;
-            }
-            
-            .panel-card {
-                padding: 16px 18px;
-            }
-            
-            .panel-icon {
-                width: 46px;
-                height: 46px;
-                border-radius: 12px;
-            }
-            
-            .panel-icon svg {
-                width: 22px;
-                height: 22px;
-            }
-            
-            .panel-name {
-                font-size: 15px;
-            }
-            
-            .panel-desc {
-                font-size: 12px;
-            }
-        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+        .container{background:rgba(255,255,255,0.95);border-radius:24px;padding:48px 40px;max-width:520px;width:100%;box-shadow:0 25px 70px rgba(0,0,0,0.25)}
+        .header{text-align:center;margin-bottom:40px}
+        .logo{width:72px;height:72px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:18px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 8px 24px rgba(102,126,234,0.4)}
+        .logo svg{width:40px;height:40px;fill:white}
+        h1{color:#1a1a2e;font-size:26px;font-weight:700;margin-bottom:8px}
+        .subtitle{color:#666;font-size:14px}
+        .panel-list{display:flex;flex-direction:column;gap:16px}
+        .panel-card{display:flex;align-items:center;padding:20px 24px;background:#f8f9fa;border:2px solid transparent;border-radius:16px;cursor:pointer;transition:all .3s;text-decoration:none}
+        .panel-card:hover{border-color:#667eea;transform:translateY(-3px);box-shadow:0 12px 32px rgba(102,126,234,0.25)}
+        .panel-icon{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;margin-right:18px;flex-shrink:0}
+        .panel-icon.zashboard{background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%)}
+        .panel-icon.metacubexd{background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%)}
+        .panel-icon svg{width:26px;height:26px;fill:white}
+        .panel-info{flex:1}
+        .panel-name{color:#1a1a2e;font-size:17px;font-weight:600;margin-bottom:4px}
+        .panel-desc{color:#888;font-size:13px}
+        .panel-arrow{width:20px;height:20px;fill:#ccc;transition:all .3s;margin-left:12px}
+        .panel-card:hover .panel-arrow{fill:#667eea;transform:translateX(4px)}
+        .footer{text-align:center;margin-top:32px;color:#999;font-size:12px}
+        .footer a{color:#667eea;text-decoration:none}
+        @media(max-width:480px){.container{padding:32px 24px}h1{font-size:22px}.panel-card{padding:16px 18px}}
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">
-                <svg viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-                </svg>
-            </div>
+            <div class="logo"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></div>
             <h1>MiProxy</h1>
             <p class="subtitle">选择控制面板</p>
         </div>
-        
         <div class="panel-list">
-            <a href="./zashboard/index.html" class="panel-card">
-                <div class="panel-icon zashboard">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>
-                    </svg>
-                </div>
-                <div class="panel-info">
-                    <div class="panel-name">Zashboard</div>
-                    <div class="panel-desc">现代化界面，适合日常使用</div>
-                </div>
-                <svg class="panel-arrow" viewBox="0 0 24 24">
-                    <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
-                </svg>
-            </a>
-            
-            <a href="./metacubexd/index.html" class="panel-card">
-                <div class="panel-icon metacubexd">
-                    <svg viewBox="0 0 24 24">
-                        <path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/>
-                    </svg>
-                </div>
-                <div class="panel-info">
-                    <div class="panel-name">MetaCubeXD</div>
-                    <div class="panel-desc">经典界面，功能全面</div>
-                </div>
-                <svg class="panel-arrow" viewBox="0 0 24 24">
-                    <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
-                </svg>
-            </a>
+            <a href="./zashboard/index.html" class="panel-card"><div class="panel-icon zashboard"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg></div><div class="panel-info"><div class="panel-name">Zashboard</div><div class="panel-desc">现代化界面，适合日常使用</div></div><svg class="panel-arrow" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg></a>
+            <a href="./metacubexd/index.html" class="panel-card"><div class="panel-icon metacubexd"><svg viewBox="0 0 24 24"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg></div><div class="panel-info"><div class="panel-name">MetaCubeXD</div><div class="panel-desc">经典界面，功能全面</div></div><svg class="panel-arrow" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg></a>
         </div>
-        
-        <div class="footer">
-            基于 <a href="https://github.com/MetaCubeX/mihomo" target="_blank">mihomo</a> 内核
-        </div>
+        <div class="footer">基于 <a href="https://github.com/MetaCubeX/mihomo" target="_blank">mihomo</a> 内核</div>
     </div>
 </body>
 </html>

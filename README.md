@@ -67,11 +67,11 @@
 
 ## 文档中心
 
-| 文档 | 说明 |
-|------|------|
-| [📖 使用指南](docs/GUIDE.md) | 控制面板详细操作说明 |
-| [❓ 常见问题](docs/FAQ.md) | 常见问题解答 |
-| [🔧 故障排查](docs/TROUBLESHOOTING.md) | 问题诊断与解决方案 |
+📖 完整文档已迁移至 [GitHub Wiki](https://github.com/56025192/miproxy-fpk/wiki)：
+
+- [📖 使用指南](https://github.com/56025192/miproxy-fpk/wiki/使用指南) - 控制面板详细操作说明
+- [❓ 常见问题](https://github.com/56025192/miproxy-fpk/wiki/常见问题) - 常见问题解答
+- [🔧 故障排查](https://github.com/56025192/miproxy-fpk/wiki/故障排查) - 问题诊断与解决方案
 
 ---
 
@@ -113,11 +113,6 @@
 │   ├── install                 # 安装向导脚本
 │   ├── config                  # 配置向导脚本
 │   └── uninstall               # 卸载向导脚本
-│
-├── docs/                       # 文档目录
-│   ├── GUIDE.md               # 使用指南
-│   ├── FAQ.md                 # 常见问题
-│   └── TROUBLESHOOTING.md     # 故障排查
 │
 ├── manifest                    # FPK 应用清单
 ├── ICON.PNG                    # 应用图标
@@ -189,6 +184,7 @@
 <p align="center">
   <a href="https://github.com/56025192">👤 作者主页</a> ·
   <a href="https://github.com/56025192/miproxy-fpk/issues">🐛 问题反馈</a> ·
-  <a href="https://github.com/56025192/miproxy-fpk/releases">📦 下载地址</a>
+  <a href="https://github.com/56025192/miproxy-fpk/releases">📦 下载地址</a> ·
+  <a href="https://github.com/56025192/miproxy-fpk/wiki">📖 Wiki</a>
 </p>
 

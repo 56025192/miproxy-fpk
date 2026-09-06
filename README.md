@@ -23,8 +23,18 @@
 | 📊 **GEO 数据库** | 内置 GeoIP / GeoSite / MMDB，开箱即用 |
 | 🔒 **安全隔离** | 依托 fnOS 权限体系，配置数据安全存储 |
 | 🌐 **局域网共享** | 支持局域网设备通过本机代理上网 |
+| 🔑 **认证保护** | 支持面板密钥和代理密码双重保护 |
 
-> ⚠️ **兼容性说明**：目前仅支持 Clash 格式订阅链接。
+---
+
+## 系统要求
+
+| 项目 | 要求 |
+|------|------|
+| fnOS 版本 | ≥ 1.1.0 |
+| 存储空间 | 约 100MB（不含 GEO 数据） |
+| 内存 | 建议 ≥ 1GB |
+| 架构 | x86_64 / arm64 |
 
 ---
 
@@ -38,10 +48,30 @@
 
 ### 配置订阅
 
-1. 进入 **MiProxy** 控制面板
+1. 进入 **MiProxy** 控制面板（默认地址：`http://NAS_IP:9090`）
 2. 在「订阅管理」中添加订阅链接或选择本地配置文件
 3. 设置自动刷新间隔（建议 6-12 小时）
 4. 点击刷新，同步节点列表
+
+### 配置浏览器代理
+
+**SOCKS5 代理：**
+- 服务器：`NAS_IP`
+- 端口：`7891`
+
+**HTTP 代理：**
+- 服务器：`NAS_IP`
+- 端口：`7890`
+
+---
+
+## 文档中心
+
+| 文档 | 说明 |
+|------|------|
+| [📖 使用指南](docs/GUIDE.md) | 控制面板详细操作说明 |
+| [❓ 常见问题](docs/FAQ.md) | 常见问题解答 |
+| [🔧 故障排查](docs/TROUBLESHOOTING.md) | 问题诊断与解决方案 |
 
 ---
 
@@ -55,7 +85,13 @@
 ├── app/                        # 应用运行时目录
 │   ├── server/                 # mihomo 核心程序
 │   ├── data/                   # GEO 数据库 (GeoIP/GeoSite/MMDB)
-│   └── ui/                     # 前端界面 (Zashboard/MetaCubeXD)
+│   │   ├── Country.mmdb       # IP 地理位置数据库
+│   │   ├── geoip.dat          # GeoIP 数据
+│   │   └── geosite.dat        # 域名规则数据库
+│   └── ui/                     # 前端界面
+│       ├── zashboard/          # 现代风格控制面板
+│       ├── metacubexd/         # 经典风格控制面板
+│       └── index.html          # 面板选择页面
 │
 ├── cmd/                        # 生命周期脚本
 │   ├── main                    # 启动/停止主脚本
@@ -67,7 +103,7 @@
 │   ├── upgrade_init            # 升级初始化
 │   ├── uninstall_callback      # 卸载回调
 │   ├── uninstall_init          # 卸载初始化
-│   └── refresh_sub             # 订阅刷新脚本
+│   └── refresh_sub             # 订阅刷新守护进程
 │
 ├── config/                     # fnOS 系统配置
 │   ├── privilege               # 权限声明
@@ -78,9 +114,14 @@
 │   ├── config                  # 配置向导脚本
 │   └── uninstall               # 卸载向导脚本
 │
-├── manifest                    # FPK 应用清单 (版本/平台/依赖等)
+├── docs/                       # 文档目录
+│   ├── GUIDE.md               # 使用指南
+│   ├── FAQ.md                 # 常见问题
+│   └── TROUBLESHOOTING.md     # 故障排查
+│
+├── manifest                    # FPK 应用清单
 ├── ICON.PNG                    # 应用图标
-├── ICON_256.PNG                # 高清应用图标
+├── ICON_256.PNG                # 高清图标
 └── README.md                   # 项目文档
 ```
 
@@ -94,6 +135,17 @@
 | 基础配置 | `/vol1/@appdata/miproxy/base.yaml` | 基础运行参数 |
 | 订阅配置 | `/vol1/@appdata/miproxy/subscription.yaml` | 订阅链接列表 |
 | 运行日志 | `/vol1/@appdata/miproxy/info.log` | 应用运行日志 |
+| 刷新日志 | `/vol1/@appdata/miproxy/refresh_sub.log` | 订阅刷新记录 |
+
+---
+
+## 代理端口说明
+
+| 端口 | 协议 | 用途 |
+|------|------|------|
+| 7890 | HTTP | HTTP/HTTPS 代理 |
+| 7891 | SOCKS5 | SOCKS5 代理（支持 UDP） |
+| 9090 | HTTP | 控制面板 API |
 
 ---
 

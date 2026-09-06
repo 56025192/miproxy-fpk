@@ -47,29 +47,34 @@
 
 ## 目录结构
 
-\`\`\`
 miproxy-fpk/
-├── manifest              # FPK 应用清单
-├── cmd/                  # 生命周期脚本
-│   ├── main.sh           # 启动/停止
-│   ├── install_callback.sh
-│   ├── config_callback.sh
-│   ├── upgrade_callback.sh
-│   ├── uninstall_callback.sh
-│   └── refresh_subscription_loop.sh  # 订阅刷新守护进程
-├── config/               # fnOS 配置
+├── .github/
+├── app/
+│   ├── data/
+│   ├── server/
+│   └── ui/
+├── cmd/
+│   ├── config_callback
+│   ├── config_init
+│   ├── install_callback
+│   ├── install_init
+│   ├── main
+│   ├── refresh_sub
+│   ├── uninstall_callback
+│   ├── uninstall_init
+│   ├── upgrade_callback
+│   └── upgrade_init
+├── config/
 │   ├── privilege
 │   └── resource
-├── wizard/               # 安装向导
+├── wizard/
 │   ├── config
 │   ├── install
 │   └── uninstall
-├── app/
-│   ├── server/           # mihomo 核心
-│   ├── data/            # GEO 数据库
-│   └── ui/              # 控制面板前端
+├── ICON.PNG
+├── ICON_256.PNG
+├── manifest
 └── README.md
-\`\`\`
 
 ---
 

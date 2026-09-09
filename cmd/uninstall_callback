@@ -1,57 +1,78 @@
 #!/bin/bash
 #
-# MiProxy 卸载回调（v2 修复版）
+# MiProxy 卸载回调
 # 功能：根据 wizard_data_action 决定是否保留数据
-# 修复：使用正确的环境变量路径 ${TRIM_PKGVAR} 和 ${TRIM_PKGETC}
 #
 
 set +e
 
-# 使用 fnOS 环境变量（而非硬编码路径）
-VAR_DIR="${TRIM_PKGVAR}"
-ETC_DIR="${TRIM_PKGETC}"
-
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 开始卸载..."
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] 数据目录: ${VAR_DIR}"
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] 配置目录: ${ETC_DIR}"
+echo "[$(date "+%Y-%m-%d %H:%M:%S")] uninstall_callback: 开始卸载..."
 
 # 获取卸载选项（默认保留数据）
 DATA_ACTION="${wizard_data_action:-keep}"
 
 if [ "$DATA_ACTION" = "delete" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 选择删除全部数据"
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] uninstall_callback: 选择删除全部数据"
     
-    # 停止 miproxy 服务
+    # ============================================
+    # 使用 fnOS 变量清理所有应用相关目录
+    # ============================================
+    
+    # 停止服务
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
     
-    # 删除用户数据目录（包含配置、日志、订阅等）
-    if [ -d "${VAR_DIR}" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 删除用户数据目录: ${VAR_DIR}"
-        rm -rf "${VAR_DIR:?}"/* 2>/dev/null || true
-        rm -rf "${VAR_DIR:?}"/.* 2>/dev/null || true
+    # 1. TRIM_APPDEST - 已安装的 target 目录（mihomo 二进制等）
+    if [ -n "${TRIM_APPDEST}" ] && [ -d "${TRIM_APPDEST}" ]; then
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] 删除应用目录: ${TRIM_APPDEST}"
+        rm -rf "${TRIM_APPDEST:?}"/* 2>/dev/null || true
     fi
     
-    # 删除配置目录
-    if [ -d "${ETC_DIR}" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] 删除配置目录: ${ETC_DIR}"
-        rm -rf "${ETC_DIR:?}"/* 2>/dev/null || true
-        rm -rf "${ETC_DIR:?}"/.* 2>/dev/null || true
+    # 2. TRIM_PKGETC - 应用配置目录
+    if [ -n "${TRIM_PKGETC}" ] && [ -d "${TRIM_PKGETC}" ]; then
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] 删除配置目录: ${TRIM_PKGETC}"
+        rm -rf "${TRIM_PKGETC:?}"/* 2>/dev/null || true
+        rm -rf "${TRIM_PKGETC:?}"/.* 2>/dev/null || true
     fi
     
-    # 删除 PID 文件（防止残留进程）
-    rm -f ${TRIM_PKGVAR}/app.pid 2>/dev/null || true
-    rm -f ${TRIM_PKGVAR}/refresh_sub.pid 2>/dev/null || true
-    rm -f ${TRIM_PKGVAR}/refresh_sub.lock 2>/dev/null || true
+    # 3. TRIM_PKGVAR - 运行时数据目录
+    if [ -n "${TRIM_PKGVAR}" ] && [ -d "${TRIM_PKGVAR}" ]; then
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] 删除数据目录: ${TRIM_PKGVAR}"
+        rm -rf "${TRIM_PKGVAR:?}"/* 2>/dev/null || true
+        rm -rf "${TRIM_PKGVAR:?}"/.* 2>/dev/null || true
+    fi
     
-    # 删除备份目录
-    rm -rf ${TRIM_PKGVAR}_backup 2>/dev/null || true
-    rm -rf /tmp/miproxy_backup 2>/dev/null || true
+    # 4. TRIM_PKGTMP - 临时目录
+    if [ -n "${TRIM_PKGTMP}" ] && [ -d "${TRIM_PKGTMP}" ]; then
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] 删除临时目录: ${TRIM_PKGTMP}"
+        rm -rf "${TRIM_PKGTMP:?}"/* 2>/dev/null || true
+        rm -rf "${TRIM_PKGTMP:?}"/.* 2>/dev/null || true
+    fi
     
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 所有数据已删除"
+    # 5. TRIM_PKGHOME - 应用用户数据目录
+    if [ -n "${TRIM_PKGHOME}" ] && [ -d "${TRIM_PKGHOME}" ]; then
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] 删除用户数据目录: ${TRIM_PKGHOME}"
+        rm -rf "${TRIM_PKGHOME:?}"/* 2>/dev/null || true
+        rm -rf "${TRIM_PKGHOME:?}"/.* 2>/dev/null || true
+    fi
+    
+    # 6. TRIM_PKGMETA - 元数据目录
+    if [ -n "${TRIM_PKGMETA}" ] && [ -d "${TRIM_PKGMETA}" ]; then
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] 删除元数据目录: ${TRIM_PKGMETA}"
+        rm -rf "${TRIM_PKGMETA:?}"/* 2>/dev/null || true
+        rm -rf "${TRIM_PKGMETA:?}"/.* 2>/dev/null || true
+    fi
+    
+    # 7. 清理 PID 和锁文件
+    rm -f "${TRIM_PKGVAR}/app.pid" 2>/dev/null || true
+    rm -f "${TRIM_PKGVAR}/refresh_sub.pid" 2>/dev/null || true
+    rm -f "${TRIM_PKGVAR}/refresh_sub.lock" 2>/dev/null || true
+    
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] uninstall_callback: 所有数据已删除"
 else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 保留数据（下次安装可继续使用）"
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] uninstall_callback: 保留数据"
 fi
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_callback v2: 卸载完成"
+echo "[$(date "+%Y-%m-%d %H:%M:%S")] uninstall_callback: 卸载完成"
 exit 0
+

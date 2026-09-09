@@ -6,13 +6,19 @@
 
 set +e
 
-# 路径配置
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "[$(date "+%Y-%m-%d %H:%M:%S")] uninstall_init: 开始卸载前准备..."
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_init: 停止服务..."
+# 获取卸载选项
+DATA_ACTION="${wizard_data_action:-keep}"
 
 # 停止主服务
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] uninstall_init: 服务已停止"
+# 强制终止可能的残留进程
+pkill -f mihomo 2>/dev/null || true
+
+echo "[$(date "+%Y-%m-%d %H:%M:%S")] uninstall_init: 服务已停止"
+echo "[$(date "+%Y-%m-%d %H:%M:%S")] uninstall_init: 卸载准备完成"
 exit 0
+

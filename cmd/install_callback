@@ -123,6 +123,14 @@ if [ -f "${SUB_CACHE_PATH}" ]; then
     SUB_RULE_PROVIDERS=$(extract_yaml_block "rule-providers" "${SUB_CACHE_PATH}")
     SUB_SUB_RULE=$(extract_yaml_block "sub-rule" "${SUB_CACHE_PATH}")
     
+    # [调试] 打印订阅文件前10行
+    if [ -f "${SUB_CACHE_PATH}" ]; then
+        log_msg "  [调试] 订阅文件前10行:"
+        head -n 10 "${SUB_CACHE_PATH}" | while IFS= read -r line; do log_msg "    | $line"; done
+        log_msg "  [调试] 订阅文件行数: $(wc -l < "${SUB_CACHE_PATH}")"
+    else
+        log_msg "  [调试] 订阅文件不存在"
+    fi
     log_msg "  📦 字段同步统计:"
     log_msg "      proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行"
     log_msg "      proxy-groups:$(printf '%s' "${SUB_PG}" | wc -l)行"

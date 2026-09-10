@@ -169,7 +169,7 @@ log_msg "生成 config.yaml..."
     echo "  auto-route: true"
     echo "  auto-redirect: true"
     echo "  auto-detect-interface: true"
-    echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]"
+    echo "  dns-hijack: [\"any:53\", \"tcp://any:53\"]""]"
 
     [ -n "${SUB_PROXIES}" ] && echo "# 节点列表（来自订阅源）" && echo "${SUB_PROXIES}"
     [ -n "${SUB_HOSTS}" ] && echo "# hosts（来自订阅源）" && echo "${SUB_HOSTS}"
@@ -186,7 +186,7 @@ log_msg "生成 config.yaml..."
         echo "# 路由规则（来自订阅源）"
         echo "${SUB_RULES}"
     else
-        echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]"
+        echo "rules: [\"GEOIP,CN,DIRECT\", \"MATCH,PROXY\"]""]"
     fi
 
     if [ -n "${SUB_DNS}" ]; then

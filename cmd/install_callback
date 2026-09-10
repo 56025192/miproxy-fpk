@@ -97,7 +97,6 @@ key_line = key + ':'
 key_pos = -1
 for i in range(len(text)):
     if text[i] == '\n':
-        # 检查换行后是否有非空白字符
         j = i + 1
         while j < len(text) and text[j] in ' \t':
             j += 1
@@ -111,22 +110,81 @@ for i in range(len(text)):
 if key_pos == -1:
     sys.exit(0)
 
-# 找块结束：下一个顶级 key（行首非空格、非-、非#的行）
+# 找 base_indent：第一个非空内容行的缩进
+base_indent = None
+i = key_pos + len(key_line)
+while i < len(text):
+    if text[i] in ' \t':
+        i += 1
+        continue
+    if text[i] == '\n':
+        i += 1
+        continue
+    # 第一个非空、非空白字符
+    base_indent = 0
+    j = key_pos
+    while j < i:
+        if text[j] in ' \t':
+            base_indent += 1
+            j += 1
+        else:
+            break
+    break
+
+if base_indent is None:
+    return text[key_pos:]
+
+# 扫描内容
 block_end = len(text)
+inside_list_item = False
+inside_map = False
+map_key_indent = 0
+
 i = key_pos + len(key_line)
 while i < len(text):
     if text[i] == '\n':
         i += 1
-        # 跳过空白
-        while i < len(text) and text[i] in ' \t':
-            i += 1
-        if i >= len(text):
+        continue
+    if text[i] in ' \t':
+        i += 1
+        continue
+    # 第一个非空白字符
+    indent = 0
+    j = key_pos
+    while j < i:
+        if text[j] in ' \t':
+            indent += 1
+            j += 1
+        else:
             break
-        # 检查是否新顶级 key
-        if text[i] not in ('-', '#'):
-            block_end = i - 1  # 结束于换行前
-            break
+    if indent < base_indent:
+        block_end = i
+        break
+    if text[i] == '-':
+        # 列表项开始
+        inside_list_item = True
+        inside_map = False
+    elif text[i] == '#':
+        # 注释行
+        pass
+    elif text[i] == ':':
+        # map key 或 map 值（key: value）
+        # 检查下一个非空白是否是换行
+        j = i + 1
+        while j < len(text) and text[j] in ' \t':
+            j += 1
+        if j >= len(text) or text[j] == '\n':
+            # map key（冒号后无内容，是 key:）
+            inside_map = True
+            map_key_indent = indent
+            inside_list_item = False
+        else:
+            # map 值（key: value）- 继续
+            inside_map = False
     else:
+        # 继续内容
+        inside_map = False
+    while i < len(text) and text[i] != '\n':
         i += 1
 
 sys.stdout.write(text[key_pos:block_end])

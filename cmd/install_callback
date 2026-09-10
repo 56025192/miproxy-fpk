@@ -88,106 +88,23 @@ fi
 # YAML 块提取
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
-import sys
+import sys, re
 key = sys.argv[1]
 text = sys.stdin.read()
-key_line = key + ':'
-
-# 找 key 在行首的位置
-key_pos = -1
-for i in range(len(text)):
-    if text[i] == '\n':
-        j = i + 1
-        while j < len(text) and text[j] in ' \t':
-            j += 1
-        if text[j:j+len(key_line)] == key_line:
-            key_pos = j
-            break
-    elif i == 0 and text[:len(key_line)] == key_line:
-        key_pos = 0
-        break
-
-if key_pos == -1:
+pattern = re.compile(r'(?:^|\n)' + re.escape(key) + r':')
+m = pattern.search(text)
+if not m:
     sys.exit(0)
-
-# 找 base_indent：第一个非空内容行的缩进
-base_indent = None
-i = key_pos + len(key_line)
-while i < len(text):
-    if text[i] in ' \t':
-        i += 1
-        continue
-    if text[i] == '\n':
-        i += 1
-        continue
-    # 第一个非空、非空白字符
-    base_indent = 0
-    j = key_pos
-    while j < i:
-        if text[j] in ' \t':
-            base_indent += 1
-            j += 1
-        else:
-            break
-    break
-
-if base_indent is None:
-    return text[key_pos:]
-
-# 扫描内容
-block_end = len(text)
-inside_list_item = False
-inside_map = False
-map_key_indent = 0
-
-i = key_pos + len(key_line)
-while i < len(text):
-    if text[i] == '\n':
-        i += 1
-        continue
-    if text[i] in ' \t':
-        i += 1
-        continue
-    # 第一个非空白字符
-    indent = 0
-    j = key_pos
-    while j < i:
-        if text[j] in ' \t':
-            indent += 1
-            j += 1
-        else:
-            break
-    if indent < base_indent:
-        block_end = i
-        break
-    if text[i] == '-':
-        # 列表项开始
-        inside_list_item = True
-        inside_map = False
-    elif text[i] == '#':
-        # 注释行
-        pass
-    elif text[i] == ':':
-        # map key 或 map 值（key: value）
-        # 检查下一个非空白是否是换行
-        j = i + 1
-        while j < len(text) and text[j] in ' \t':
-            j += 1
-        if j >= len(text) or text[j] == '\n':
-            # map key（冒号后无内容，是 key:）
-            inside_map = True
-            map_key_indent = indent
-            inside_list_item = False
-        else:
-            # map 值（key: value）- 继续
-            inside_map = False
-    else:
-        # 继续内容
-        inside_map = False
-    while i < len(text) and text[i] != '\n':
-        i += 1
-
-sys.stdout.write(text[key_pos:block_end])
+search_text = text[m.end():]
+# 找下一个顶级 key: 换行 + 非空白字符开头 + 冒号结尾
+# 不匹配 "  sub-key:" (有缩进) 或 "name: value" (冒号后有内容)
+next_pattern = re.compile(r'\n([^\s][^:\n]*):')
+next_m = next_pattern.search(search_text)
+if next_m:
+    block_end = m.end() + next_m.start()
+else:
+    block_end = len(text)
+sys.stdout.write(text[m.start():block_end])
 PYEOF
 }
 

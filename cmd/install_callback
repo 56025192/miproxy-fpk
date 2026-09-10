@@ -41,10 +41,8 @@ log_msg "  HTTP_PORT=${HTTP_PORT}, API_PORT=${API_PORT}"
 log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}"
 
 # 安全提取订阅域名
-SUB_DOMAIN_FILTER=""
 # 安全提取订阅域名（domain 在函数内全局可用）
 domain=""
-SUB_DOMAIN_FILTER=""
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
     domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||' | grep -oE '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$' | head -1)
     if [ -n "${domain}" ]; then

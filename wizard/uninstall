@@ -4,7 +4,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "卸载时可选择是否保留应用数据。如果选择保留，下次安装时仍可继续使用原有配置。"
+        "helpText": "选择是否删除 MiProxy 的所有数据。删除后将无法恢复。"
       },
       {
         "type": "radio",
@@ -12,9 +12,14 @@
         "label": "数据处理方式",
         "defaultValue": "keep",
         "options": [
-          { "value": "keep", "label": "保留数据（推荐）— 保留订阅、配置和面板，卸载后可重新安装继续使用" },
-          { "value": "delete", "label": "删除全部数据 — 彻底清除所有订阅、配置、日志和面板文件" }
+          {"value": "keep", "label": "保留数据（推荐）— 下次安装可继续使用原有配置"},
+          {"value": "delete", "label": "删除全部数据 — 彻底清除所有应用文件"}
         ]
+      },
+      {
+        "type": "tips",
+        "helpText": "<b>将被删除的目录：</b><br>• target — 应用文件目录<br>• etc — 配置文件目录<br>• var — 运行数据目录<br>• tmp — 临时文件目录<br>• home — 用户数据目录<br>• meta — 元数据目录",
+        "visibleIf": {"field": "wizard_data_action", "value": "delete"}
       }
     ]
   }

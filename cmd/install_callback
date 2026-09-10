@@ -88,32 +88,25 @@ fi
 # YAML 块提取
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
-import sys
-key = sys.argv[1] + ":"
-try:
-    with open(sys.argv[2], 'r', encoding='utf-8') as f:
-        content = f.read()
-except:
+import sys, re
+key = sys.argv[1]
+text = sys.stdin.read()
+# 查找 key 在行首的位置（\nkey: 形式，表示顶级 key）
+pattern = re.compile(r'\n' + re.escape(key) + r':')
+match = pattern.search(text)
+if not match:
     sys.exit(0)
-
-# 找 key 的位置
-pos = content.find(key)
-if pos == -1:
-    sys.exit(0)
-
-# 找最近的下一个顶级 key
-top_keys = ['proxies:', 'proxy-groups:', 'rules:', 'dns:',
-             'hosts:', 'proxy-providers:', 'rule-providers:',
-             'sub-rule:', 'bypass:']
-search_from = pos + len(key)
-next_key_pos = len(content)
-for k in top_keys:
-    p = content.find('\n' + k, search_from)
-    if p != -1 and p < next_key_pos:
-        next_key_pos = p
-
-block = content[pos:next_key_pos]
-sys.stdout.write(block)
+# 块起始位置（包含 key 那行的开头）
+block_start = match.start()
+# 找下一个顶级 key（行首的非空、非列表、非注释行）
+# 匹配: \n{非空白字符开头}，但排除列表项 - 和注释 #
+next_top = re.search(r'\n[^\s#-][^:]*:', text[match.end():])
+if next_top:
+    block_end = match.end() + next_top.start()
+else:
+    block_end = len(text)
+# 输出块内容
+sys.stdout.write(text[block_start:block_end])
 PYEOF
 }
 

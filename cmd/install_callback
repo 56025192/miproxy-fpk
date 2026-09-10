@@ -88,25 +88,48 @@ fi
 # YAML 块提取
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
-import sys, re
+import sys
 key = sys.argv[1]
 text = sys.stdin.read()
-# 查找 key 在行首的位置（\nkey: 形式，表示顶级 key）
-pattern = re.compile(r'\n' + re.escape(key) + r':')
-match = pattern.search(text)
-if not match:
+key_line = key + ':'
+
+# 找 key 在行首的位置
+key_pos = -1
+for i in range(len(text)):
+    if text[i] == '\n':
+        # 检查换行后是否有非空白字符
+        j = i + 1
+        while j < len(text) and text[j] in ' \t':
+            j += 1
+        if text[j:j+len(key_line)] == key_line:
+            key_pos = j
+            break
+    elif i == 0 and text[:len(key_line)] == key_line:
+        key_pos = 0
+        break
+
+if key_pos == -1:
     sys.exit(0)
-# 块起始位置（包含 key 那行的开头）
-block_start = match.start()
-# 找下一个顶级 key（行首的非空、非列表、非注释行）
-# 匹配: \n{非空白字符开头}，但排除列表项 - 和注释 #
-next_top = re.search(r'\n[^\s#-][^:]*:', text[match.end():])
-if next_top:
-    block_end = match.end() + next_top.start()
-else:
-    block_end = len(text)
-# 输出块内容
-sys.stdout.write(text[block_start:block_end])
+
+# 找块结束：下一个顶级 key（行首非空格、非-、非#的行）
+block_end = len(text)
+i = key_pos + len(key_line)
+while i < len(text):
+    if text[i] == '\n':
+        i += 1
+        # 跳过空白
+        while i < len(text) and text[i] in ' \t':
+            i += 1
+        if i >= len(text):
+            break
+        # 检查是否新顶级 key
+        if text[i] not in ('-', '#'):
+            block_end = i - 1  # 结束于换行前
+            break
+    else:
+        i += 1
+
+sys.stdout.write(text[key_pos:block_end])
 PYEOF
 }
 

@@ -42,12 +42,13 @@ log_msg "  SUB_TYPE=${SUB_TYPE}, SUB_URL=${SUB_URL:-（空）}"
 
 # 安全提取订阅域名
 SUB_DOMAIN_FILTER=""
+# 安全提取订阅域名（domain 在函数内全局可用）
+domain=""
+SUB_DOMAIN_FILTER=""
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then
     domain=$(echo "${SUB_URL}" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||' | grep -oE '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$' | head -1)
     if [ -n "${domain}" ]; then
         log_msg "  提取订阅域名: ${domain}"
-        SUB_DOMAIN_FILTER="    - \"${domain}\"
-    - \"*.${domain}\""
     fi
 fi
 
@@ -93,30 +94,28 @@ import sys
 key = sys.argv[1] + ":"
 try:
     with open(sys.argv[2], 'r', encoding='utf-8') as f:
-        lines = f.readlines()
+        content = f.read()
 except:
     sys.exit(0)
-result = []
-found = False
-for line in lines:
-    stripped = line.rstrip('
-')
-    if not stripped.strip():
-        if found: result.append(line)
-        continue
-    is_top = not stripped[0].isspace()
-    if is_top:
-        if stripped.startswith(key):
-            found = True
-            result.append(line)
-        elif found:
-            if stripped.startswith('-'):
-                result.append(line)
-            else:
-                break
-    elif found:
-        result.append(line)
-sys.stdout.write(''.join(result))
+
+# 找 key 的位置
+pos = content.find(key)
+if pos == -1:
+    sys.exit(0)
+
+# 找最近的下一个顶级 key
+top_keys = ['proxies:', 'proxy-groups:', 'rules:', 'dns:',
+             'hosts:', 'proxy-providers:', 'rule-providers:',
+             'sub-rule:', 'bypass:']
+search_from = pos + len(key)
+next_key_pos = len(content)
+for k in top_keys:
+    p = content.find('\n' + k, search_from)
+    if p != -1 and p < next_key_pos:
+        next_key_pos = p
+
+block = content[pos:next_key_pos]
+sys.stdout.write(block)
 PYEOF
 }
 
@@ -179,7 +178,12 @@ log_msg "生成 config.yaml..."
         echo "${SUB_PG}"
     else
         echo "proxy-groups:"
-        echo "  - name: PROXY; type: select; proxies: [DIRECT, REJECT]"
+        echo 'proxy-groups:'
+        echo '  - name: PROXY'
+        echo '    type: select'
+        echo '    proxies:'
+        echo '      - DIRECT'
+        echo '      - REJECT'
     fi
 
     if [ -n "${SUB_RULES}" ]; then
@@ -201,7 +205,7 @@ log_msg "生成 config.yaml..."
         echo "  fake-ip-filter:"
         echo "    - \"+.lan\""
         echo "    - \"+.local\""
-        [ -n "${SUB_DOMAIN_FILTER}" ] && echo -e "    - \"+.${domain}\""
+        [ -n "${domain}" ] && echo "    - \"+.${domain}\""
         echo "  nameserver:"
         echo "    - 223.5.5.5"
         echo "    - 119.29.29.29"

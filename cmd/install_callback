@@ -91,18 +91,18 @@ extract_yaml_block() {
 import sys, re, base64
 
 key = sys.argv[1]
-with open(sys.argv[2], 'r', encoding='utf-8', errors='replace') as f:
+with open(sys.argv[2], "r", encoding="utf-8", errors="replace") as f:
     content = f.read()
 
 # 去掉 BOM
-if content.startswith('﻿'):
+if content.startswith("\ufeff"):
     content = content[1:]
 
 # 尝试 base64 解码（订阅可能是 base64 编码的）
 try:
     decoded = base64.b64decode(content.strip())
     try:
-        content = decoded.decode('utf-8')
+        content = decoded.decode("utf-8")
     except:
         pass
 except:
@@ -112,24 +112,20 @@ except:
 try:
     import json as j
     data = j.loads(content)
-    if isinstance(data, dict) and 'proxies' in data:
-        # 转换为 YAML 格式
+    if isinstance(data, dict) and "proxies" in data:
         import yaml
         content = yaml.dump(data, allow_unicode=True, default_flow_style=False)
 except:
     pass
 
 # 用正则提取目标 key 块
-pattern = re.compile(r'(?:^|
-)' + re.escape(key) + r':')
+pattern = re.compile("(?:^|\n)" + re.escape(key) + ":")
 m = pattern.search(content)
 if not m:
     sys.exit(0)
 
 search_text = content[m.end():]
-next_pattern = re.compile(r'
-([^\s][^:
-]*):')
+next_pattern = re.compile("\n([^\s][^:\n]*):")
 next_m = next_pattern.search(search_text)
 block_end = m.end() + next_m.start() if next_m else len(content)
 sys.stdout.write(content[m.start():block_end])

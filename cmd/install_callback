@@ -177,7 +177,6 @@ log_msg "生成 config.yaml..."
         echo "# 代理组（来自订阅源）"
         echo "${SUB_PG}"
     else
-        echo "proxy-groups:"
         echo 'proxy-groups:'
         echo '  - name: PROXY'
         echo '    type: select'

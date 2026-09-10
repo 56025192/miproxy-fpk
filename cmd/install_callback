@@ -155,6 +155,11 @@ if [ -f "${SUB_CACHE_PATH}" ]; then
     else
         log_msg "  [调试] 订阅文件不存在"
     fi
+    log_msg "  [调试] SUB_PROXIES 前5行:"
+    printf "%s" "${SUB_PROXIES}" | head -n 5 | while IFS= read -r line; do log_msg "    | $line"; done
+    log_msg "  [调试] SUB_PROXIES 总行数: $(printf "%s" "${SUB_PROXIES}" | wc -l)"
+    log_msg "  [调试] SUB_PG 前5行:"
+    printf "%s" "${SUB_PG}" | head -n 5 | while IFS= read -r line; do log_msg "    | $line"; done
     log_msg "  📦 字段同步统计:"
     log_msg "      proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行"
     log_msg "      proxy-groups:$(printf '%s' "${SUB_PG}" | wc -l)行"

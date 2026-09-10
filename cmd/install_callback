@@ -88,23 +88,51 @@ fi
 # YAML 块提取
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
-import sys, re
+import sys, re, base64
+
 key = sys.argv[1]
-text = sys.stdin.read()
-pattern = re.compile(r'(?:^|\n)' + re.escape(key) + r':')
-m = pattern.search(text)
+with open(sys.argv[2], 'r', encoding='utf-8', errors='replace') as f:
+    content = f.read()
+
+# 去掉 BOM
+if content.startswith('﻿'):
+    content = content[1:]
+
+# 尝试 base64 解码（订阅可能是 base64 编码的）
+try:
+    decoded = base64.b64decode(content.strip())
+    try:
+        content = decoded.decode('utf-8')
+    except:
+        pass
+except:
+    pass
+
+# 如果是 JSON 格式 {"proxies": [...]}，转换为 YAML
+try:
+    import json as j
+    data = j.loads(content)
+    if isinstance(data, dict) and 'proxies' in data:
+        # 转换为 YAML 格式
+        import yaml
+        content = yaml.dump(data, allow_unicode=True, default_flow_style=False)
+except:
+    pass
+
+# 用正则提取目标 key 块
+pattern = re.compile(r'(?:^|
+)' + re.escape(key) + r':')
+m = pattern.search(content)
 if not m:
     sys.exit(0)
-search_text = text[m.end():]
-# 找下一个顶级 key: 换行 + 非空白字符开头 + 冒号结尾
-# 不匹配 "  sub-key:" (有缩进) 或 "name: value" (冒号后有内容)
-next_pattern = re.compile(r'\n([^\s][^:\n]*):')
+
+search_text = content[m.end():]
+next_pattern = re.compile(r'
+([^\s][^:
+]*):')
 next_m = next_pattern.search(search_text)
-if next_m:
-    block_end = m.end() + next_m.start()
-else:
-    block_end = len(text)
-sys.stdout.write(text[m.start():block_end])
+block_end = m.end() + next_m.start() if next_m else len(content)
+sys.stdout.write(content[m.start():block_end])
 PYEOF
 }
 

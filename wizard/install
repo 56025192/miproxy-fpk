@@ -4,7 +4,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用<br><br>✨ 功能特性：<br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：mihomo proxy-providers 内置自动刷新<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br><br>💡 安装后可随时通过控制面板修改配置"
+        "helpText": "📦 MiProxy 是基于 mihomo 代理核心的飞牛 NAS 应用<br><br>✨ 功能特性：<br>• 多协议支持：VMess、VLess、Trojan、Shadowsocks、Hysteria2<br>• 双控制面板：Zashboard（现代）/ MetaCubeXD（经典）<br>• 订阅管理：支持远程 URL 和本地文件<br>• 自动刷新：mihomo proxy-providers 内置自动刷新<br>• 离线 GEO：内置 GEO 数据库，开箱即用<br>• TUN 模式：支持全局代理（需 Root 权限）<br><br>💡 安装后可随时通过控制面板修改配置"
       }
     ]
   },
@@ -46,7 +46,7 @@
     "items": [
       {
         "type": "tips",
-        "helpText": "TUN 功能可将系统所有流量通过代理转发（全局代理）。<br><br>⚠️ 注意：<br>• TUN 需要 mihomo 以特殊方式运行，fnOS 手动安装的 mihomo 可能无法启用此功能<br>• 如果启用后服务异常，请关闭 TUN 重试<br>• 普通代理模式（无需 TUN）已能满足大多数使用场景"
+        "helpText": "<b>TUN 功能说明：</b><br>TUN 模式可将系统所有流量通过代理转发（全局代理），无需在每个应用单独配置代理。<br><br><b>工作原理：</b><br>• 创建虚拟网络接口 (tun0)<br>• 接管系统 DNS 和路由<br>• 所有流量自动走代理<br><br><b>⚠️ 注意事项：</b><br>• 需要 Root 权限运行（MiProxy 已启用）<br>• 可能在部分网络环境下不稳定<br>• 普通代理模式（关闭 TUN）已能满足大多数场景"
       },
       {
         "type": "radio",
@@ -54,8 +54,8 @@
         "label": "启用 TUN",
         "defaultValue": "false",
         "options": [
-          {"value": "false", "label": "关闭（推荐）"},
-          {"value": "true", "label": "启用（需要内核支持）"}
+          {"value": "false", "label": "关闭（推荐）— 使用浏览器代理插件"},
+          {"value": "true", "label": "启用 — 全局代理模式"}
         ],
         "rules": [{"required": true, "message": "请选择 TUN 状态"}]
       }

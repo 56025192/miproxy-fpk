@@ -3,12 +3,15 @@
 # MiProxy 主进程管理脚本
 # 启动时自动调用 refresh_sub 守护进程实现定时订阅刷新
 
+# ============================================
+# 使用 TRIM_* 变量定义路径
+# ============================================
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_sub.pid"
 
-# MiProxy 核心路径
-MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
+# MiProxy 核心路径（使用 TRIM_APPDEST）
+MIHOMO_BIN="${TRIM_APPDEST}/target/mihomo"
 MIHOMO_DIR="${TRIM_PKGVAR}"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 
@@ -49,38 +52,17 @@ is_running() {
 
 # ============ 订阅刷新守护进程管理 ============
 
-# 查找脚本位置（支持多种安装路径）
+# 查找脚本位置（使用动态方式）
 find_script() {
     local name="$1"
-    # 优先尝试 /var/apps/ 路径（飞牛官方 cmd 目录位置）
-    if [ -f "/var/apps/miproxy/cmd/${name}" ]; then
-        echo "/var/apps/miproxy/cmd/${name}"
+    # 使用 BASH_SOURCE 获取脚本目录
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local target="${script_dir}/${name}"
+    
+    if [ -f "${target}" ]; then
+        echo "${target}"
         return 0
     fi
-    # 尝试 TRIM_PKGVAR 目录
-    if [ -f "${TRIM_PKGVAR}/cmd/${name}" ]; then
-        echo "${TRIM_PKGVAR}/cmd/${name}"
-        return 0
-    fi
-    # 尝试 TRIM_APPDEST/cmd/ 路径
-    if [ -f "${TRIM_APPDEST}/cmd/${name}" ]; then
-        echo "${TRIM_APPDEST}/cmd/${name}"
-        return 0
-    fi
-    # 尝试标准安装路径
-    for p in "/var/packages/miproxy/cmd/${name}" "${TRIM_APPDEST}/${name}"; do
-        if [ -f "${p}" ]; then
-            echo "${p}"
-            return 0
-        fi
-    done
-    # 尝试从已知的 cmd 目录
-    for p in "/var/apps/miproxy/cmd" "/var/packages/miproxy/cmd" "${TRIM_APPDEST}/cmd" "${TRIM_PKGVAR}/cmd"; do
-        if [ -d "${p}" ] && [ -f "${p}/${name}" ]; then
-            echo "${p}/${name}"
-            return 0
-        fi
-    done
     return 1
 }
 
@@ -131,21 +113,13 @@ start_refresh_daemon() {
     # 启动守护进程
     log_msg "启动订阅刷新守护进程 (间隔: ${refresh_interval} 小时)..."
     
-    # refresh_sub 脚本位置（与核心文件同目录）
-    local refresh_sub_script="${TRIM_PKGVAR}/refresh_sub"
+    # 使用动态方式获取脚本位置
+    local refresh_sub_script
+    refresh_sub_script=$(find_script "refresh_sub")
     
-    # 如果脚本不存在，从安装目录复制
-    if [ ! -f "${refresh_sub_script}" ]; then
-        # cmd 目录在 /var/apps/miproxy/cmd/，不是 TRIM_APPDEST/cmd/
-        local install_cmd="/var/apps/miproxy/cmd/refresh_sub"
-        if [ -f "${install_cmd}" ]; then
-            cp -f "${install_cmd}" "${refresh_sub_script}"
-            chmod +x "${refresh_sub_script}"
-            log_msg "已复制 refresh_sub 到 ${refresh_sub_script}"
-        else
-            log_msg "错误: 无法找到 refresh_sub 脚本 (检查 ${install_cmd})"
-            return 1
-        fi
+    if [ -z "${refresh_sub_script}" ]; then
+        log_msg "错误: 无法找到 refresh_sub 脚本"
+        return 1
     fi
     
     # 后台运行守护进程
@@ -289,3 +263,4 @@ status)
     exit 1
     ;;
 esac
+

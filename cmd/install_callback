@@ -89,41 +89,25 @@ fi
 extract_yaml_block() {
     python3 - "$1" "$2" 2>/dev/null <<'PYEOF'
 import sys, re, base64
-
 key = sys.argv[1]
 with open(sys.argv[2], "r", encoding="utf-8", errors="replace") as f:
     content = f.read()
-
-# 去掉 BOM
-if content.startswith("\ufeff"):
-    content = content[1:]
-
-# 尝试 base64 解码（订阅可能是 base64 编码的）
+if content.startswith("\ufeff"): content = content[1:]
 try:
     decoded = base64.b64decode(content.strip())
-    try:
-        content = decoded.decode("utf-8")
-    except:
-        pass
-except:
-    pass
-
-# 如果是 JSON 格式 {"proxies": [...]}，转换为 YAML
+    try: content = decoded.decode("utf-8")
+    except: pass
+except: pass
 try:
     import json as j
     data = j.loads(content)
     if isinstance(data, dict) and "proxies" in data:
         import yaml
         content = yaml.dump(data, allow_unicode=True, default_flow_style=False)
-except:
-    pass
-
-# 用正则提取目标 key 块
+except: pass
 pattern = re.compile("(?:^|\n)" + re.escape(key) + ":")
 m = pattern.search(content)
-if not m:
-    sys.exit(0)
-
+if not m: sys.exit(0)
 search_text = content[m.end():]
 next_pattern = re.compile("\n([^\s][^:\n]*):")
 next_m = next_pattern.search(search_text)
@@ -160,6 +144,10 @@ if [ -f "${SUB_CACHE_PATH}" ]; then
     log_msg "  [调试] SUB_PROXIES 总行数: $(printf "%s" "${SUB_PROXIES}" | wc -l)"
     log_msg "  [调试] SUB_PG 前5行:"
     printf "%s" "${SUB_PG}" | head -n 5 | while IFS= read -r line; do log_msg "    | $line"; done
+    log_msg "  [调试] SUB_PROXIES 总行数: $(printf "%s" "${SUB_PROXIES}" | wc -l)"
+    printf "%s" "${SUB_PROXIES}" | head -n 10 | while IFS= read -r line; do log_msg "    | $line"; done
+    log_msg "  [调试] SUB_PROV 总行数: $(printf "%s" "${SUB_PROXY_PROVIDERS}" | wc -l)"
+    printf "%s" "${SUB_PROXY_PROVIDERS}" | head -n 10 | while IFS= read -r line; do log_msg "    | $line"; done
     log_msg "  📦 字段同步统计:"
     log_msg "      proxies:$(printf '%s' "${SUB_PROXIES}" | wc -l)行"
     log_msg "      proxy-groups:$(printf '%s' "${SUB_PG}" | wc -l)行"
@@ -238,6 +226,7 @@ log_msg "生成 config.yaml..."
     fi
 
     [ -n "${SUB_BYPASS}" ] && echo "# bypass 私有绕过列表" && echo "${SUB_BYPASS}"
+    [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers" && echo "${SUB_PROXY_PROVIDERS}"
     [ -n "${SUB_PROXY_PROVIDERS}" ] && echo "# proxy-providers 代理集合" && echo "${SUB_PROXY_PROVIDERS}"
     [ -n "${SUB_RULE_PROVIDERS}" ] && echo "# rule-providers 规则集合" && echo "${SUB_RULE_PROVIDERS}"
     [ -n "${SUB_SUB_RULE}" ] && echo "# sub-rule 子规则" && echo "${SUB_SUB_RULE}"

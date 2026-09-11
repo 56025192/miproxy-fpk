@@ -169,9 +169,19 @@ start_process() {
 
     log_msg "启动 miproxy (TUN: ${TUN_ENABLED}, cmd: ${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG})..."
     
-    # 以包用户身份启动（降权），即使 privilege 设为 root
-    # TUN 模式需要 root 权限，在配置文件中启用即可
+    # privilege=root 时以 root 启动（TUN 必须），否则降权
     if [ -n "${TRIM_USERNAME}" ]; then
+        if [ "${TUN_ENABLED}" = "true" ]; then
+            log_msg "TUN 模式已启用，以 root 启动 mihomo..."
+            bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
+        else
+            log_msg "以降权用户 ${TRIM_USERNAME} 启动..."
+            runuser -u "${TRIM_USERNAME}" -- bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
+        fi
+    else
+        log_msg "启动 mihomo（未降权）..."
+        bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
+    fi
         log_msg "以降权用户 ${TRIM_USERNAME} 启动..."
         runuser -u "${TRIM_USERNAME}" -- bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
     else

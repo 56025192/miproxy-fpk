@@ -3,25 +3,16 @@
 # MiProxy 主进程管理脚本
 # 启动时自动调用 refresh_sub 守护进程实现定时订阅刷新
 
-# ============================================
-# 使用 TRIM_* 变量定义路径
-# ============================================
 LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_sub.pid"
 
-# MiProxy 核心路径（使用 TRIM_APPDEST）
-MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"  # 运行时数据目录
+# MiProxy 核心路径
+MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
 MIHOMO_DIR="${TRIM_PKGVAR}"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 
-# 检查是否启用 TUN 模式
-TUN_ENABLED="false"
-if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
-    TUN_ENABLED=$(grep ^wizard_tun_enable= "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
-
-')
-fi
+CMD="${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
@@ -42,12 +33,14 @@ check_process() {
 }
 
 is_running() {
+    # 检查 PID 文件中的进程是否仍在运行
     if [ -f "${PID_FILE}" ]; then
         local pid
         pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
         if check_process "${pid}"; then
             return 0
         else
+            # 清理过期的 PID 文件
             rm -f "${PID_FILE}"
         fi
     fi
@@ -56,19 +49,44 @@ is_running() {
 
 # ============ 订阅刷新守护进程管理 ============
 
+# 查找脚本位置（支持多种安装路径）
 find_script() {
     local name="$1"
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local target="${script_dir}/${name}"
-    if [ -f "${target}" ]; then
-        echo "${target}"
+    # 优先尝试 /var/apps/ 路径（飞牛官方 cmd 目录位置）
+    if [ -f "/var/apps/miproxy/cmd/${name}" ]; then
+        echo "/var/apps/miproxy/cmd/${name}"
         return 0
     fi
+    # 尝试 TRIM_PKGVAR 目录
+    if [ -f "${TRIM_PKGVAR}/cmd/${name}" ]; then
+        echo "${TRIM_PKGVAR}/cmd/${name}"
+        return 0
+    fi
+    # 尝试 TRIM_APPDEST/cmd/ 路径
+    if [ -f "${TRIM_APPDEST}/cmd/${name}" ]; then
+        echo "${TRIM_APPDEST}/cmd/${name}"
+        return 0
+    fi
+    # 尝试标准安装路径
+    for p in "/var/packages/miproxy/cmd/${name}" "${TRIM_APPDEST}/${name}"; do
+        if [ -f "${p}" ]; then
+            echo "${p}"
+            return 0
+        fi
+    done
+    # 尝试从已知的 cmd 目录
+    for p in "/var/apps/miproxy/cmd" "/var/packages/miproxy/cmd" "${TRIM_APPDEST}/cmd" "${TRIM_PKGVAR}/cmd"; do
+        if [ -d "${p}" ] && [ -f "${p}/${name}" ]; then
+            echo "${p}/${name}"
+            return 0
+        fi
+    done
     return 1
 }
 
 
 start_refresh_daemon() {
+    # 检查是否需要启动守护进程
     if [ ! -f "${TRIM_PKGETC}/settings.conf" ]; then
         log_msg "配置文件不存在，跳过订阅刷新守护进程"
         return 0
@@ -76,15 +94,13 @@ start_refresh_daemon() {
     
     local sub_type sub_url refresh_interval
     sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
-
 ')
     sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
-
 ')
     refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
-
 ')
     
+    # 检查是否满足运行条件
     if [ "${sub_type}" != "remote" ]; then
         log_msg "订阅类型为 ${sub_type}，不启动刷新守护进程"
         return 0
@@ -100,6 +116,7 @@ start_refresh_daemon() {
         return 0
     fi
     
+    # 检查守护进程是否已经在运行
     if [ -f "${REFRESH_PID_FILE}" ]; then
         local existing_pid
         existing_pid=$(head -n 1 "${REFRESH_PID_FILE}" | tr -d '[:space:]')
@@ -111,16 +128,27 @@ start_refresh_daemon() {
         fi
     fi
     
+    # 启动守护进程
     log_msg "启动订阅刷新守护进程 (间隔: ${refresh_interval} 小时)..."
     
-    local refresh_sub_script
-    refresh_sub_script=$(find_script "refresh_sub")
+    # refresh_sub 脚本位置（与核心文件同目录）
+    local refresh_sub_script="${TRIM_PKGVAR}/refresh_sub"
     
-    if [ -z "${refresh_sub_script}" ]; then
-        log_msg "错误: 无法找到 refresh_sub 脚本"
-        return 1
+    # 如果脚本不存在，从安装目录复制
+    if [ ! -f "${refresh_sub_script}" ]; then
+        # cmd 目录在 /var/apps/miproxy/cmd/，不是 TRIM_APPDEST/cmd/
+        local install_cmd="/var/apps/miproxy/cmd/refresh_sub"
+        if [ -f "${install_cmd}" ]; then
+            cp -f "${install_cmd}" "${refresh_sub_script}"
+            chmod +x "${refresh_sub_script}"
+            log_msg "已复制 refresh_sub 到 ${refresh_sub_script}"
+        else
+            log_msg "错误: 无法找到 refresh_sub 脚本 (检查 ${install_cmd})"
+            return 1
+        fi
     fi
     
+    # 后台运行守护进程
     nohup env TRIM_PKGVAR="${TRIM_PKGVAR}" TRIM_PKGETC="${TRIM_PKGETC}" TRIM_APPDEST="${TRIM_APPDEST}" bash "${refresh_sub_script}" >> "${LOG_FILE}" 2>&1 &
     local new_pid=$!
     echo "${new_pid}" > "${REFRESH_PID_FILE}"
@@ -158,6 +186,7 @@ start_process() {
         return 0
     fi
 
+    # 启动前先校验二进制和配置文件
     if [ ! -x "${MIHOMO_BIN}" ]; then
         log_msg "错误: mihomo 二进制不存在或不可执行: ${MIHOMO_BIN}"
         return 1
@@ -167,32 +196,18 @@ start_process() {
         return 1
     fi
 
-    log_msg "启动 miproxy (TUN: ${TUN_ENABLED}, cmd: ${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG})..."
-    
-    # privilege=root 时以 root 启动（TUN 必须），否则降权
-    if [ -n "${TRIM_USERNAME}" ]; then
-        if [ "${TUN_ENABLED}" = "true" ]; then
-            log_msg "TUN 模式已启用，以 root 启动 mihomo..."
-            bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
-        else
-            log_msg "以降权用户 ${TRIM_USERNAME} 启动..."
-            runuser -u "${TRIM_USERNAME}" -- bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
-        fi
-    else
-        log_msg "启动 mihomo（未降权）..."
-        bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
-    fi
-    else
-        log_msg "启动 mihomo（未降权）..."
-        bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
-    fi
-    
+    log_msg "启动 miproxy (cmd: ${CMD})..."
+    # 启动 mihomo 到后台，日志写入 LOG_FILE
+    bash -c "${CMD}" >> ${LOG_FILE} 2>&1 &
     local pid=$!
     printf "%s" "${pid}" > ${PID_FILE}
 
+    # 等待并验证 mihomo 是否真的启动成功
     sleep 2
     if check_process "${pid}"; then
         log_msg "miproxy 启动完成 (PID: ${pid})"
+        
+        # 启动订阅刷新守护进程
         start_refresh_daemon
         return 0
     else
@@ -205,6 +220,7 @@ start_process() {
 stop_process() {
     log_msg "停止 miproxy..."
 
+    # 先停止订阅刷新守护进程
     stop_refresh_daemon
 
     local pid=""
@@ -243,6 +259,7 @@ start)
     if start_process; then
         exit 0
     else
+        # 把错误写到 fnOS 能识别的地方
         echo "miproxy 启动失败，请查看 ${LOG_FILE}" > "${TRIM_TEMP_LOGFILE:-/dev/null}"
         exit 1
     fi

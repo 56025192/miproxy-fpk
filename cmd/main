@@ -11,7 +11,7 @@ PID_FILE="${TRIM_PKGVAR}/app.pid"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_sub.pid"
 
 # MiProxy 核心路径（使用 TRIM_APPDEST）
-MIHOMO_BIN="${TRIM_APPDEST}/target/mihomo"
+MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"  # 运行时数据目录
 MIHOMO_DIR="${TRIM_PKGVAR}"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 
@@ -19,7 +19,8 @@ MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 TUN_ENABLED="false"
 if [ -f "${TRIM_PKGETC}/settings.conf" ]; then
     TUN_ENABLED=$(grep ^wizard_tun_enable= "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
-')
+
+')
 fi
 
 log_msg() {
@@ -75,11 +76,14 @@ start_refresh_daemon() {
     
     local sub_type sub_url refresh_interval
     sub_type=$(grep '^wizard_sub_type=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
-')
+
+')
     sub_url=$(grep '^wizard_sub_url=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
-')
+
+')
     refresh_interval=$(grep '^wizard_refresh_interval=' "${TRIM_PKGETC}/settings.conf" 2>/dev/null | cut -d= -f2- | tr -d '
-')
+
+')
     
     if [ "${sub_type}" != "remote" ]; then
         log_msg "订阅类型为 ${sub_type}，不启动刷新守护进程"
@@ -260,4 +264,3 @@ status)
     exit 1
     ;;
 esac
-

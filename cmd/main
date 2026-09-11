@@ -182,8 +182,6 @@ start_process() {
         log_msg "启动 mihomo（未降权）..."
         bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
     fi
-        log_msg "以降权用户 ${TRIM_USERNAME} 启动..."
-        runuser -u "${TRIM_USERNAME}" -- bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &
     else
         log_msg "启动 mihomo（未降权）..."
         bash -c "${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}" >> ${LOG_FILE} 2>&1 &

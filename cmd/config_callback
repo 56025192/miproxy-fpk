@@ -10,7 +10,7 @@ echo "===== config_callback v7 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "$
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
-LOG_FILE="${VAR_DIR}/info.log"
+LOG_FILE="${VAR_DIR}/log/mihomo.log"
 CONFIG_FILE="${VAR_DIR}/config.yaml"
 
 PROXY_USER="${wizard_proxy_user:-}"

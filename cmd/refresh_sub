@@ -5,7 +5,6 @@
 
 DEBUG_LOG="${TRIM_PKGVAR}/refresh_sub.log"
 MIHOMO_LOG="${TRIM_PKGVAR}/info.log"
-MIHOMO_LOG="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"

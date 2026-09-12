@@ -6,13 +6,18 @@
 
 set +e
 
-# 路径配置
+LOG_FILE="${TRIM_PKGVAR}/upgrade_callback.log"
+mkdir -p "$(dirname "${LOG_FILE}")"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] upgrade_callback: 升级完成，启动服务..."
+log_msg "upgrade_callback: 升级完成，启动服务..."
 
-# 启动服务
-bash "${SCRIPT_DIR}/main" start 2>/dev/null || true
+bash "${SCRIPT_DIR}/main" start 2>>"${LOG_FILE}" || true
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] upgrade_callback: 升级完成"
+log_msg "upgrade_callback: 升级完成，服务已启动"
 exit 0

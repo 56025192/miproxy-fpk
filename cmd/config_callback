@@ -3,7 +3,7 @@
 # 关键修复：完整同步订阅源的所有配置字段
 # 同步字段：proxies / proxy-groups / rules / dns / hosts / bypass / proxy-providers / rule-providers 等
 
-DEBUG_LOG="${TRIM_PKGVAR}/config_callback.log"
+DEBUG_LOG="${TRIM_PKGVAR}/log/config_callback.log"
 exec 2>>"${DEBUG_LOG}"
 echo "===== config_callback v7 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 

@@ -5,9 +5,9 @@
 # - os_max_version: 空值表示暂无明确兼容上限；填写具体版本表示最高兼容版本
 
 appname               = miproxy
-version               = 2.6.39
+version               = 2.7.0
 display_name          = MiProxy
-desc                  = 飞牛 NAS 代理网关：一键 TUN 全局代理 + 订阅自动刷新 + 双控制面板 + DNS 防泄露，基于 mihomo 内核（仅支持 Clash 格式订阅）
+desc                  = MiProxy v2.7.0 - 飞牛 NAS 代理网关：一键 TUN 全局代理 + 订阅自动刷新 + 双控制面板 + DNS 防泄露，基于 mihomo 内核（仅支持 Clash 格式订阅）
 platform              = all
 source                = thirdparty
 os_min_version        = 1.1.0
@@ -22,4 +22,4 @@ startup               = true
 service_port          = 9090
 desktop_uidir         = ui
 desktop_applaunchname = miproxy.dashboard
-changelog           = v2.6.39: TUN 配置全面优化（strict-route 防DNS泄露 + gso 性能 + miproxy 网卡名）+ 修复订阅解析 bug + 修复 mihomo 路径 | v2.6.38: 优化订阅解析逻辑 | v2.6.37: 修复 cmd 目录路径
+changelog           = v2.7.0: 全面代码审查 + 日志模块重构 + TUN 配置优化 | v2.6.39: TUN 配置优化（strict-route防DNS泄露 + gso性能 + miproxy网卡名）+ 修复订阅解析 bug | v2.6.38: 优化订阅解析逻辑

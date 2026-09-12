@@ -99,6 +99,16 @@ miproxy-fpk/
 
 ## 更新日志
 
+### v2.7.0
+- ⚡ **TUN 配置全面优化**：`strict-route` 防止 DNS 泄露、`gso` 吞吐性能提升、网卡名固定为 `miproxy`
+- 🛡️ **新增升级日志文件**：`upgrade_init.log` / `upgrade_callback.log`，升级过程可独立追踪
+- 🔧 **日志模块重构**：分离 mihomo 重启日志（写入 `info.log`）与订阅刷新记录（写入 `refresh_sub.log`），避免日志混杂
+- 🐛 修复 mihomo 重启日志与订阅刷新日志混写问题
+- 🐛 修复 echo 语句语法错误导致的日志记录失败
+- 🐛 修复 `refresh_sub` 中重复定义 `MIHOMO_LOG` 变量问题
+- 🔄 自动同步 mihomo / 前端最新二进制文件
+- 📖 全面重写 README，突出 TUN 全局代理 + NAS 私有网关核心价值
+
 ### v2.6.39
 - 🛡️ TUN 配置全面优化：新增 `strict-route` 防 DNS 泄露、`gso` 吞吐优化、网卡命名固定为 `miproxy`
 - 🐛 修复订阅节点提取失败问题（heredoc bug）
@@ -108,6 +118,7 @@ miproxy-fpk/
 - ✨ 新增控制面板选择页面，安装时自由选择 Zashboard 或 MetaCubeXD
 
 [查看全部版本](https://github.com/56025192/miproxy-fpk/releases)
+
 
 ---
 

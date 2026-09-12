@@ -6,12 +6,13 @@
 
 set +e
 
-LOG_FILE="${TRIM_PKGVAR}/upgrade_callback.log"
+LOG_FILE="${TRIM_PKGVAR}/log/upgrade_callback.log"
 mkdir -p "${TRIM_PKGVAR}/log"
 
 # 迁移旧日志文件（v2.6.38+ 统一归档到 log/）
 [ -f "${TRIM_PKGVAR}/info.log" ] && mv "${TRIM_PKGVAR}/info.log" "${TRIM_PKGVAR}/log/mihomo.log" 2>/dev/null
 [ -f "${TRIM_PKGVAR}/refresh_sub.log" ] && mv "${TRIM_PKGVAR}/refresh_sub.log" "${TRIM_PKGVAR}/log/refresh_sub.log" 2>/dev/null
+[ -f "${TRIM_PKGVAR}/upgrade_callback.log" ] && mv "${TRIM_PKGVAR}/upgrade_callback.log" "${TRIM_PKGVAR}/log/upgrade_callback.log" 2>/dev/null
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"

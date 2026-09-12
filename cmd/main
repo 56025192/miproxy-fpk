@@ -3,7 +3,7 @@
 # MiProxy 主进程管理脚本
 # 启动时自动调用 refresh_sub 守护进程实现定时订阅刷新
 
-LOG_FILE="${TRIM_PKGVAR}/log/mihomo.log"
+LOG_FILE="${TRIM_PKGVAR}/info.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_sub.pid"
 
@@ -13,8 +13,6 @@ MIHOMO_DIR="${TRIM_PKGVAR}"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 
 CMD="${MIHOMO_BIN} -d ${MIHOMO_DIR} -f ${MIHOMO_CONFIG}"
-
-mkdir -p "${TRIM_PKGVAR}/log"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}

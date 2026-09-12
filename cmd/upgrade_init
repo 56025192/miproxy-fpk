@@ -6,13 +6,18 @@
 
 set +e
 
-# 路径配置
+LOG_FILE="${TRIM_PKGVAR}/upgrade_init.log"
+mkdir -p "$(dirname "${LOG_FILE}")"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] upgrade_init: 升级前准备..."
+log_msg "upgrade_init: 升级前准备，停止服务..."
 
-# 停止服务
-bash "${SCRIPT_DIR}/main" stop 2>/dev/null || true
+bash "${SCRIPT_DIR}/main" stop 2>>"${LOG_FILE}" || true
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] upgrade_init: 服务已停止，准备升级"
+log_msg "upgrade_init: 服务已停止，准备升级"
 exit 0

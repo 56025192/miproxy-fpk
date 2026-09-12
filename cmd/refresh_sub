@@ -3,14 +3,16 @@
 # 直接使用环境变量，不依赖脚本位置
 # 脚本位置: ${TRIM_PKGVAR}/refresh_sub
 
-DEBUG_LOG="${TRIM_PKGVAR}/refresh_sub.log"
-MIHOMO_LOG="${TRIM_PKGVAR}/info.log"
+DEBUG_LOG="${TRIM_PKGVAR}/log/refresh_sub.log"
+MIHOMO_LOG="${TRIM_PKGVAR}/log/mihomo.log"
 PID_FILE="${TRIM_PKGVAR}/app.pid"
 MIHOMO_BIN="${TRIM_PKGVAR}/target/mihomo"
 MIHOMO_CONFIG="${TRIM_PKGVAR}/config.yaml"
 MIHOMO_DIR="${TRIM_PKGVAR}"
 LOCK_FILE="${TRIM_PKGVAR}/refresh_sub.lock"
 REFRESH_PID_FILE="${TRIM_PKGVAR}/refresh_sub.pid"
+
+mkdir -p "${TRIM_PKGVAR}/log"
 
 log_msg() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${DEBUG_LOG}"

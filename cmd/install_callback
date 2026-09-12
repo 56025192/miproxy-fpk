@@ -45,10 +45,10 @@ fi
 
 mkdir -p "${TARGET_DIR}" "${VAR_DIR}/proxy_providers" "${UI_TARGET}" "${TRIM_PKGETC}" "${VAR_DIR}/log"
 
-# 迁移旧日志文件（v2.6.38+ 统一归档到 log/）
-[ -f "${VAR_DIR}/info.log" ] && mv "${VAR_DIR}/info.log" "${VAR_DIR}/log/mihomo.log" 2>/dev/null
-[ -f "${VAR_DIR}/refresh_sub.log" ] && mv "${VAR_DIR}/refresh_sub.log" "${VAR_DIR}/log/refresh_sub.log" 2>/dev/null
-[ -f "${VAR_DIR}/config_callback.log" ] && mv "${VAR_DIR}/config_callback.log" "${VAR_DIR}/log/config_callback.log" 2>/dev/null
+# 迁移旧日志文件（追加到归档，保留历史内容；仅升级场景有意义，新装时跳过）
+[ -f "${VAR_DIR}/info.log" ] && cat "${VAR_DIR}/info.log" >> "${VAR_DIR}/log/mihomo.log" 2>/dev/null && rm -f "${VAR_DIR}/info.log"
+[ -f "${VAR_DIR}/refresh_sub.log" ] && cat "${VAR_DIR}/refresh_sub.log" >> "${VAR_DIR}/log/refresh_sub.log" 2>/dev/null && rm -f "${VAR_DIR}/refresh_sub.log"
+[ -f "${VAR_DIR}/config_callback.log" ] && cat "${VAR_DIR}/config_callback.log" >> "${VAR_DIR}/log/config_callback.log" 2>/dev/null && rm -f "${VAR_DIR}/config_callback.log"
 
 log_msg "复制 mihomo 核心..."
 [ -f "${APP_DEST}/server/mihomo" ] && cp -f "${APP_DEST}/server/mihomo" "${TARGET_DIR}/mihomo" && chmod +x "${TARGET_DIR}/mihomo"

@@ -3,14 +3,14 @@
 # 关键修复：完整同步订阅源的所有配置字段
 # 同步字段：proxies / proxy-groups / rules / dns / hosts / bypass / proxy-providers / rule-providers 等
 
-DEBUG_LOG="${TRIM_PKGVAR}/log/config_callback.log"
+DEBUG_LOG="${TRIM_PKGVAR}/config_callback.log"
 exec 2>>"${DEBUG_LOG}"
 echo "===== config_callback v7 开始: $(date '+%Y-%m-%d %H:%M:%S') =====" >> "${DEBUG_LOG}"
 
 APP_DEST="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
 UI_TARGET="${VAR_DIR}/ui"
-LOG_FILE="${VAR_DIR}/log/mihomo.log"
+LOG_FILE="${VAR_DIR}/info.log"
 CONFIG_FILE="${VAR_DIR}/config.yaml"
 
 PROXY_USER="${wizard_proxy_user:-}"
@@ -52,12 +52,6 @@ fi
 
 SUB_CACHE_PATH="${VAR_DIR}/proxy_providers/subscription.yaml"
 mkdir -p "${VAR_DIR}/proxy_providers"
-
-# 迁移旧日志文件到归档目录（追加保留历史内容）
-[ -f "${TRIM_PKGVAR}/info.log" ] && cat "${TRIM_PKGVAR}/info.log" >> "${TRIM_PKGVAR}/log/mihomo.log" 2>/dev/null && rm -f "${TRIM_PKGVAR}/info.log"
-[ -f "${TRIM_PKGVAR}/refresh_sub.log" ] && cat "${TRIM_PKGVAR}/refresh_sub.log" >> "${TRIM_PKGVAR}/log/refresh_sub.log" 2>/dev/null && rm -f "${TRIM_PKGVAR}/refresh_sub.log"
-[ -f "${TRIM_PKGVAR}/config_callback.log" ] && cat "${TRIM_PKGVAR}/config_callback.log" >> "${TRIM_PKGVAR}/log/config_callback.log" 2>/dev/null && rm -f "${TRIM_PKGVAR}/config_callback.log"
-
 
 NEED_DOWNLOAD=0
 if [ "${SUB_TYPE}" = "remote" ] && [ -n "${SUB_URL}" ]; then

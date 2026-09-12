@@ -25,7 +25,7 @@ REFRESH_INTERVAL_HOURS="${wizard_refresh_interval:-0}"
 TUN_ENABLE="${wizard_tun_enable:-false}"
 
 log_msg() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "${LOG_FILE}" >> "${DEBUG_LOG}"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
 }
 
 log_msg "install_callback v9 启动"
